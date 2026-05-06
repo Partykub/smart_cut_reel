@@ -430,62 +430,67 @@ Done when:
 - [x] P1-A04: ทำ service runner สำหรับเรียก `/run` ของแต่ละ service ตามลำดับ
   Owner: Orchestrator | Write Scope: Orchestrator service เท่านั้น | Depends on: P1-A03 | Deliverable: pipeline runner + failure handling
 - [ ] P1-B01: ทำ Debug Frontend หน้า upload + create job
-  Owner: Frontend | Write Scope: Debug frontend เท่านั้น | Depends on: P1-A03 | Deliverable: upload และ create job ได้
+  Owner: Frontend | Assigned To: ฟิล์ม | Write Scope: Debug frontend เท่านั้น | Depends on: P1-A03 | Deliverable: upload และ create job ได้
 - [ ] P1-B02: ทำ Debug Frontend หน้า status/artifact viewer
-  Owner: Frontend | Write Scope: Debug frontend เท่านั้น | Depends on: P1-A01, P1-A03 | Deliverable: ดู `service_status.json` และ artifact links ได้
+  Owner: Frontend | Assigned To: ฟิล์ม | Write Scope: Debug frontend เท่านั้น | Depends on: P1-A01, P1-A03 | Deliverable: ดู `service_status.json` และ artifact links ได้
 - [ ] P1-B03: ทำ Debug Frontend หน้า preview/download output
-  Owner: Frontend | Write Scope: Debug frontend เท่านั้น | Depends on: P1-A03, P1-H02 | Deliverable: preview/download `final_9x16.mp4`
+  Owner: Frontend | Assigned To: ฟิล์ม | Write Scope: Debug frontend เท่านั้น | Depends on: P1-A03, P1-H02 | Deliverable: preview/download `final_9x16.mp4`
 - [ ] P1-C01: ทำ Validation Service
-  Owner: Validation | Write Scope: Validation service เท่านั้น | Depends on: P1-A01 | Deliverable: `/run` validate input/job config
+  Owner: Validation | Assigned To: ปาร์ตี้ | Write Scope: Validation service เท่านั้น | Depends on: P1-A01 | Deliverable: `/run` validate input/job config
 - [ ] P1-C02: ทำ Media Metadata Service ด้วย `ffprobe`
-  Owner: Media | Write Scope: Media metadata service เท่านั้น | Depends on: P1-A01 | Deliverable: `metadata.json`
+  Owner: Media | Assigned To: ปาร์ตี้ | Write Scope: Media metadata service เท่านั้น | Depends on: P1-A01 | Deliverable: `metadata.json`
 - [ ] P1-C03: ทำ Proxy/Frame Sampling Service
-  Owner: Media | Write Scope: Proxy/frame sampling service เท่านั้น | Depends on: P1-C02 | Deliverable: `proxy.mp4`, `sampled_frames.json`
+  Owner: Media | Assigned To: ปาร์ตี้ | Write Scope: Proxy/frame sampling service เท่านั้น | Depends on: P1-C02 | Deliverable: `proxy.mp4`, `sampled_frames.json`
 - [ ] P1-D01: เลือก model และทำ Body Detection Service skeleton
-  Owner: Vision AI | Write Scope: Body detection service เท่านั้น | Depends on: P1-A01 | Deliverable: `/run` อ่าน proxy และเขียน output mock ได้
+  Owner: Vision AI | Assigned To: ปาร์ตี้ | Write Scope: Body detection service เท่านั้น | Depends on: P1-A01 | Deliverable: `/run` อ่าน proxy และเขียน output mock ได้
 - [ ] P1-D02: ทำ body detection จริงบน sampled frames/proxy
-  Owner: Vision AI | Write Scope: Body detection service เท่านั้น | Depends on: P1-C03, P1-D01 | Deliverable: `body_tracks_raw.json`
+  Owner: Vision AI | Assigned To: ปาร์ตี้ | Write Scope: Body detection service เท่านั้น | Depends on: P1-C03, P1-D01 | Deliverable: `body_tracks_raw.json`
 - [ ] P1-D03: ทำ fallback เมื่อ detect ไม่เจอ
-  Owner: Vision AI | Write Scope: Body detection service เท่านั้น | Depends on: P1-D02 | Deliverable: missing frames + confidence policy
+  Owner: Vision AI | Assigned To: ปาร์ตี้ | Write Scope: Body detection service เท่านั้น | Depends on: P1-D02 | Deliverable: missing frames + confidence policy
 - [ ] P1-E01: ทำ Track Interpolation Service
-  Owner: Reframe | Write Scope: Track interpolation service เท่านั้น | Depends on: P1-D02 | Deliverable: `body_tracks_interpolated.json`
+  Owner: Reframe | Assigned To: นนท์ | Write Scope: Track interpolation service เท่านั้น | Depends on: P1-D02 | Deliverable: `body_tracks_interpolated.json`
 - [ ] P1-E02: ทำ outlier removal และ missing strategy
-  Owner: Reframe | Write Scope: Track interpolation service เท่านั้น | Depends on: P1-E01 | Deliverable: track ที่ไม่กระโดดแรง
+  Owner: Reframe | Assigned To: นนท์ | Write Scope: Track interpolation service เท่านั้น | Depends on: P1-E01 | Deliverable: track ที่ไม่กระโดดแรง
 - [ ] P1-F01: ทำ Reframe Planning Service
-  Owner: Reframe | Write Scope: Reframe planning service เท่านั้น | Depends on: P1-C02, P1-E01 | Deliverable: `reframe_plan_raw.json`
+  Owner: Reframe | Assigned To: นนท์ | Write Scope: Reframe planning service เท่านั้น | Depends on: P1-C02, P1-E01 | Deliverable: `reframe_plan_raw.json`
 - [ ] P1-F02: ทำ crop clamp และ subject framing rule
-  Owner: Reframe | Write Scope: Reframe planning service เท่านั้น | Depends on: P1-F01 | Deliverable: crop ไม่หลุดขอบ
+  Owner: Reframe | Assigned To: นนท์ | Write Scope: Reframe planning service เท่านั้น | Depends on: P1-F01 | Deliverable: crop ไม่หลุดขอบ
 - [ ] P1-G01: ทำ easing function library
-  Owner: Smoothing | Write Scope: Easing/smoothing service เท่านั้น | Depends on: P1-A01 | Deliverable: `linear`, `easeOutCubic`, `easeInOutCubic`, `easeInOutSine`
+  Owner: Smoothing | Assigned To: ฟิล์ม | Write Scope: Easing/smoothing service เท่านั้น | Depends on: P1-A01 | Deliverable: `linear`, `easeOutCubic`, `easeInOutCubic`, `easeInOutSine`
 - [ ] P1-G02: ทำ Easing/Smoothing Service
-  Owner: Smoothing | Write Scope: Easing/smoothing service เท่านั้น | Depends on: P1-F01, P1-G01 | Deliverable: `reframe_plan_smooth.json`
+  Owner: Smoothing | Assigned To: ฟิล์ม | Write Scope: Easing/smoothing service เท่านั้น | Depends on: P1-F01, P1-G01 | Deliverable: `reframe_plan_smooth.json`
 - [ ] P1-G03: ทำ velocity/acceleration limit และ dead zone
-  Owner: Smoothing | Write Scope: Easing/smoothing service เท่านั้น | Depends on: P1-G02 | Deliverable: crop path smooth และ clamp แล้ว
+  Owner: Smoothing | Assigned To: ฟิล์ม | Write Scope: Easing/smoothing service เท่านั้น | Depends on: P1-G02 | Deliverable: crop path smooth และ clamp แล้ว
 - [ ] P1-H01: ทำ Render Plan Compiler Service
-  Owner: Renderer | Write Scope: Render plan compiler service เท่านั้น | Depends on: P1-C02, P1-G02 | Deliverable: `render_plan.json`
+  Owner: Renderer | Assigned To: ฟิล์ม | Write Scope: Render plan compiler service เท่านั้น | Depends on: P1-C02, P1-G02 | Deliverable: `render_plan.json`
 - [ ] P1-H02: ทำ FFmpeg Renderer Service แบบ center crop/static crop ก่อน
-  Owner: Renderer | Write Scope: FFmpeg renderer service เท่านั้น | Depends on: P1-H01 | Deliverable: output 9:16 เล่นได้
+  Owner: Renderer | Assigned To: ฟิล์ม | Write Scope: FFmpeg renderer service เท่านั้น | Depends on: P1-H01 | Deliverable: output 9:16 เล่นได้
 - [ ] P1-H03: ทำ FFmpeg Renderer ใช้ smooth crop plan
-  Owner: Renderer | Write Scope: FFmpeg renderer service เท่านั้น | Depends on: P1-G03, P1-H02 | Deliverable: output 9:16 ที่ pan ตาม crop plan
+  Owner: Renderer | Assigned To: ฟิล์ม | Write Scope: FFmpeg renderer service เท่านั้น | Depends on: P1-G03, P1-H02 | Deliverable: output 9:16 ที่ pan ตาม crop plan
 - [ ] P1-I01: ทำ sample input/output fixture สำหรับทุก service
-  Owner: QA/Integration | Write Scope: `fixtures/` หรือ test data เท่านั้น | Depends on: P1-A01 | Deliverable: sample job + sample artifact
+  Owner: QA/Integration | Assigned To: นนท์ | Write Scope: `fixtures/` หรือ test data เท่านั้น | Depends on: P1-A01 | Deliverable: sample job + sample artifact
 - [ ] P1-I02: ทำ integration test pipeline ด้วย mock service
-  Owner: QA/Integration | Write Scope: integration test เท่านั้น | Depends on: P1-A04, P1-I01 | Deliverable: pipeline วิ่งครบด้วย mock artifact
+  Owner: QA/Integration | Assigned To: นนท์ | Write Scope: integration test เท่านั้น | Depends on: P1-A04, P1-I01 | Deliverable: pipeline วิ่งครบด้วย mock artifact
 - [ ] P1-I03: ทำ end-to-end test ด้วยวิดีโอจริงสั้น ๆ
-  Owner: QA/Integration | Write Scope: integration test เท่านั้น | Depends on: P1-D02, P1-G03, P1-H03 | Deliverable: output ผ่าน acceptance criteria
+  Owner: QA/Integration | Assigned To: นนท์ | Write Scope: integration test เท่านั้น | Depends on: P1-D02, P1-G03, P1-H03 | Deliverable: output ผ่าน acceptance criteria
 
 Source of truth for P1-A01 contract files lives in `contracts/CONTRACTS.md` and the JSON Schemas under `contracts/`.
 
 สถานะล่าสุด: P1-A01, P1-A02, P1-A03, และ P1-A04 เสร็จแล้ว โดย P1-A04 เพิ่ม HTTP service runner ที่เรียก `/run` ตามลำดับ, register artifacts/warnings, handle hard-fail ต่อ step, และยัง fallback เป็น mock runner เมื่อยังไม่ config service endpoints.
 
-### งานที่ทำพร้อมกันได้ทันที
+### งานที่เริ่มได้ทันทีตอนนี้
 
-- P1-A01, P1-B01, P1-C01, P1-D01, P1-G01, P1-I01 ทำพร้อมกันได้ แต่ทุกคนต้องยึด sample contract เดียวกัน
-- P1-C02 ทำคู่กับ P1-C01 ได้ เพราะใช้ input video เหมือนกันแต่ output คนละ artifact
-- P1-H02 เริ่มทำแบบ static/center crop ได้ก่อน โดยยังไม่ต้องรอ AI หรือ smoothing
-- P1-B02 ทำด้วย mock `service_status.json` ได้ก่อน แล้วค่อยต่อ API จริงภายหลัง
+- ปาร์ตี้: เริ่ม `P1-C01`, `P1-C02`, และ `P1-D01` ได้ทันทีจาก contract ปัจจุบันและ Orchestrator ที่มีอยู่แล้ว
+- ฟิล์ม: เริ่ม `P1-B01`, `P1-B02`, และ `P1-G01` ได้ทันที โดย `P1-B02` ใช้ mock `service_status.json` ไปก่อนได้
+- นนท์: เริ่ม `P1-I01` ได้ทันที และเริ่ม scaffold ของ `P1-I02` ด้วย mock HTTP services ได้ทันที
 
-### งานที่ต้องเรียงลำดับ
+### งานที่ต้องรอในแต่ละ lane
+
+- ปาร์ตี้: `P1-C03` รอ `P1-C02`; `P1-D02` รอ `P1-C03` และ `P1-D01`; `P1-D03` รอ `P1-D02`
+- ฟิล์ม: `P1-B03` รอ `P1-H02`; `P1-G02` รอ `P1-F01` และ `P1-G01`; `P1-G03` รอ `P1-G02`; `P1-H01` รอ `P1-C02` และ `P1-G02`; `P1-H02` รอ `P1-H01`; `P1-H03` รอ `P1-G03` และ `P1-H02`
+- นนท์: `P1-I02` รอ `P1-I01` ในส่วน integration จริง; `P1-E01` รอ `P1-D02`; `P1-E02` รอ `P1-E01`; `P1-F01` รอ `P1-C02` และ `P1-E01`; `P1-F02` รอ `P1-F01`; `P1-I03` รอ `P1-D02`, `P1-G03`, และ `P1-H03`
+
+### Dependency กลางของทั้งโปรเจกต์
 
 - P1-A01 ต้องเสร็จก่อนงานที่เขียน/อ่าน manifest จริงทุกตัว
 - P1-A03 ต้องเสร็จก่อน Debug Frontend ต่อ create job จริง
@@ -495,7 +500,7 @@ Source of truth for P1-A01 contract files lives in `contracts/CONTRACTS.md` and 
 - P1-E01 ต้องเสร็จก่อน P1-F01 เพราะ reframe planning ต้องใช้ interpolated tracks
 - P1-F01 ต้องเสร็จก่อน P1-G02 เพราะ smoothing ต้องใช้ raw reframe plan
 - P1-G02 ต้องเสร็จก่อน P1-H01 เพราะ render plan ต้องชี้ไปที่ smooth crop plan
-- P1-H01 ต้องเสร็จก่อน P1-H02/P1-H03 เพราะ renderer อ่านจาก render plan เท่านั้น
+- P1-H01 ต้องเสร็จก่อนการต่อ P1-H02/P1-H03 เข้ากับ pipeline จริง เพราะ renderer อ่านจาก render plan เท่านั้น
 - P1-H03 ต้องเสร็จก่อน P1-I03 เพราะ end-to-end test ต้องใช้ renderer จริง
 
 ### จุดที่อาจทับกันและต้องตกลงก่อน
