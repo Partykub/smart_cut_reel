@@ -427,7 +427,7 @@ Done when:
   Owner: Orchestrator | Write Scope: Orchestrator service เท่านั้น | Depends on: P1-A01 | Deliverable: helper upload/download/list artifact
 - [x] P1-A03: ทำ Orchestrator API สำหรับ create job และ run pipeline
   Owner: Orchestrator | Write Scope: Orchestrator service เท่านั้น | Depends on: P1-A01, P1-A02 | Deliverable: API create job/run job/status
-- [ ] P1-A04: ทำ service runner สำหรับเรียก `/run` ของแต่ละ service ตามลำดับ
+- [x] P1-A04: ทำ service runner สำหรับเรียก `/run` ของแต่ละ service ตามลำดับ
   Owner: Orchestrator | Write Scope: Orchestrator service เท่านั้น | Depends on: P1-A03 | Deliverable: pipeline runner + failure handling
 - [ ] P1-B01: ทำ Debug Frontend หน้า upload + create job
   Owner: Frontend | Write Scope: Debug frontend เท่านั้น | Depends on: P1-A03 | Deliverable: upload และ create job ได้
@@ -476,7 +476,7 @@ Done when:
 
 Source of truth for P1-A01 contract files lives in `contracts/CONTRACTS.md` and the JSON Schemas under `contracts/`.
 
-สถานะล่าสุด: P1-A01, P1-A02, และ P1-A03 เสร็จแล้ว โดย P1-A03 มี FastAPI endpoint สำหรับ create job, get status, และ run job พร้อม mock runner สำหรับ bridge ไป P1-A04.
+สถานะล่าสุด: P1-A01, P1-A02, P1-A03, และ P1-A04 เสร็จแล้ว โดย P1-A04 เพิ่ม HTTP service runner ที่เรียก `/run` ตามลำดับ, register artifacts/warnings, handle hard-fail ต่อ step, และยัง fallback เป็น mock runner เมื่อยังไม่ config service endpoints.
 
 ### งานที่ทำพร้อมกันได้ทันที
 

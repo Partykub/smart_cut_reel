@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 import hashlib
 import json
-from pathlib import Path
+import os
 from typing import Any
 from uuid import uuid4
 
@@ -19,6 +19,7 @@ from .path_resolver import job_prefix
 from .path_resolver import manifest_path
 from .path_resolver import output_path
 from .path_resolver import validate_job_id
+from .pipeline_runner import HttpPipelineRunner
 from .pipeline_runner import MockPipelineRunner
 from .pipeline_runner import PipelineRunner
 
@@ -34,7 +35,7 @@ class OrchestratorService:
         self.store = store
         self.manifest_manager = ManifestManager(store)
         self.artifact_helper = ArtifactHelper(store, self.manifest_manager)
-        self.runner = runner or MockPipelineRunner()
+        self.runner = runner or _build_default_runner()
         self.job_manifest_template = job_manifest_template or _load_job_manifest_template()
 
     def create_job(
@@ -124,3 +125,29 @@ class OrchestratorService:
 def _load_job_manifest_template() -> dict[str, Any]:
     template_path = repo_root() / "contracts" / "examples" / "job_manifest.sample.json"
     return json.loads(template_path.read_text(encoding="utf-8"))
+
+
+def _build_default_runner() -> PipelineRunner:
+    raw_service_endpoints = os.getenv("ORCHESTRATOR_SERVICE_ENDPOINTS")
+    if not raw_service_endpoints:
+        return MockPipelineRunner()
+
+    try:
+        service_endpoints = json.loads(raw_service_endpoints)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            "ORCHESTRATOR_SERVICE_ENDPOINTS must be a JSON object mapping step IDs to service URLs."
+        ) from exc
+
+    if not isinstance(service_endpoints, dict) or not all(
+        isinstance(step_id, str) and isinstance(endpoint, str)
+        for step_id, endpoint in service_endpoints.items()
+    ):
+        raise RuntimeError(
+            "ORCHESTRATOR_SERVICE_ENDPOINTS must be a JSON object mapping step IDs to service URLs."
+        )
+
+    return HttpPipelineRunner(
+        service_endpoints=service_endpoints,
+        minio_bucket=os.getenv("ORCHESTRATOR_MINIO_BUCKET", "smart-cut"),
+    )

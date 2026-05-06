@@ -6,6 +6,7 @@ from .object_store import FilesystemObjectStore
 from .object_store import MinIOObjectStore
 from .object_store import ObjectStore
 from .object_store import StoredObject
+from .pipeline_runner import HttpPipelineRunner
 from .pipeline_runner import MockPipelineRunner
 from .pipeline_runner import PipelineRunner
 from .path_resolver import KNOWN_ARTIFACT_KEYS
@@ -22,6 +23,7 @@ from .path_resolver import validate_job_id
 __all__ = [
     "ArtifactHelper",
     "FilesystemObjectStore",
+    "HttpPipelineRunner",
     "KNOWN_ARTIFACT_KEYS",
     "ManifestManager",
     "MinIOObjectStore",
