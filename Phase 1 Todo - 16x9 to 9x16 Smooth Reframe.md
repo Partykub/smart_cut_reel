@@ -419,36 +419,60 @@ Done when:
 
 ## 5. Parallel Todo Board
 
-ตารางนี้แบ่งงานให้หลายคนทำพร้อมกันได้ โดยระบุ write scope ชัดเจนเพื่อลดการทับกัน ถ้างานไหนต้องรอ output จากงานอื่นจะระบุในช่อง `Depends on`
+รายการนี้เปลี่ยนเป็น Markdown task list เพื่อให้ติ๊กสถานะงานได้ตรง ๆ โดยเปลี่ยน `[ ]` เป็น `[x]` เมื่อเสร็จ
 
-| ID | Task | Owner | Write Scope | Depends on | Deliverable |
-| --- | --- | --- | --- | --- | --- |
-| P1-A01 | เสร็จแล้ว: กำหนด contract กลางของ `job_manifest.json`, `artifact_manifest.json`, `service_status.json` | Orchestrator | `contracts/`, docs หรือ schema กลาง | None | JSON schema + sample job |
-| P1-A02 | กำหนด MinIO object layout และ helper สำหรับ read/write artifact | Orchestrator | Orchestrator service เท่านั้น | P1-A01 | helper upload/download/list artifact |
-| P1-A03 | ทำ Orchestrator API สำหรับ create job และ run pipeline | Orchestrator | Orchestrator service เท่านั้น | P1-A01, P1-A02 | API create job/run job/status |
-| P1-A04 | ทำ service runner สำหรับเรียก `/run` ของแต่ละ service ตามลำดับ | Orchestrator | Orchestrator service เท่านั้น | P1-A03 | pipeline runner + failure handling |
-| P1-B01 | ทำ Debug Frontend หน้า upload + create job | Frontend | Debug frontend เท่านั้น | P1-A03 | upload และ create job ได้ |
-| P1-B02 | ทำ Debug Frontend หน้า status/artifact viewer | Frontend | Debug frontend เท่านั้น | P1-A01, P1-A03 | ดู `service_status.json` และ artifact links ได้ |
-| P1-B03 | ทำ Debug Frontend หน้า preview/download output | Frontend | Debug frontend เท่านั้น | P1-A03, P1-H02 | preview/download `final_9x16.mp4` |
-| P1-C01 | ทำ Validation Service | Validation | Validation service เท่านั้น | P1-A01 | `/run` validate input/job config |
-| P1-C02 | ทำ Media Metadata Service ด้วย `ffprobe` | Media | Media metadata service เท่านั้น | P1-A01 | `metadata.json` |
-| P1-C03 | ทำ Proxy/Frame Sampling Service | Media | Proxy/frame sampling service เท่านั้น | P1-C02 | `proxy.mp4`, `sampled_frames.json` |
-| P1-D01 | เลือก model และทำ Body Detection Service skeleton | Vision AI | Body detection service เท่านั้น | P1-A01 | `/run` อ่าน proxy และเขียน output mock ได้ |
-| P1-D02 | ทำ body detection จริงบน sampled frames/proxy | Vision AI | Body detection service เท่านั้น | P1-C03, P1-D01 | `body_tracks_raw.json` |
-| P1-D03 | ทำ fallback เมื่อ detect ไม่เจอ | Vision AI | Body detection service เท่านั้น | P1-D02 | missing frames + confidence policy |
-| P1-E01 | ทำ Track Interpolation Service | Reframe | Track interpolation service เท่านั้น | P1-D02 | `body_tracks_interpolated.json` |
-| P1-E02 | ทำ outlier removal และ missing strategy | Reframe | Track interpolation service เท่านั้น | P1-E01 | track ที่ไม่กระโดดแรง |
-| P1-F01 | ทำ Reframe Planning Service | Reframe | Reframe planning service เท่านั้น | P1-C02, P1-E01 | `reframe_plan_raw.json` |
-| P1-F02 | ทำ crop clamp และ subject framing rule | Reframe | Reframe planning service เท่านั้น | P1-F01 | crop ไม่หลุดขอบ |
-| P1-G01 | ทำ easing function library | Smoothing | Easing/smoothing service เท่านั้น | P1-A01 | `linear`, `easeOutCubic`, `easeInOutCubic`, `easeInOutSine` |
-| P1-G02 | ทำ Easing/Smoothing Service | Smoothing | Easing/smoothing service เท่านั้น | P1-F01, P1-G01 | `reframe_plan_smooth.json` |
-| P1-G03 | ทำ velocity/acceleration limit และ dead zone | Smoothing | Easing/smoothing service เท่านั้น | P1-G02 | crop path smooth และ clamp แล้ว |
-| P1-H01 | ทำ Render Plan Compiler Service | Renderer | Render plan compiler service เท่านั้น | P1-C02, P1-G02 | `render_plan.json` |
-| P1-H02 | ทำ FFmpeg Renderer Service แบบ center crop/static crop ก่อน | Renderer | FFmpeg renderer service เท่านั้น | P1-H01 | output 9:16 เล่นได้ |
-| P1-H03 | ทำ FFmpeg Renderer ใช้ smooth crop plan | Renderer | FFmpeg renderer service เท่านั้น | P1-G03, P1-H02 | output 9:16 ที่ pan ตาม crop plan |
-| P1-I01 | ทำ sample input/output fixture สำหรับทุก service | QA/Integration | `fixtures/` หรือ test data เท่านั้น | P1-A01 | sample job + sample artifact |
-| P1-I02 | ทำ integration test pipeline ด้วย mock service | QA/Integration | integration test เท่านั้น | P1-A04, P1-I01 | pipeline วิ่งครบด้วย mock artifact |
-| P1-I03 | ทำ end-to-end test ด้วยวิดีโอจริงสั้น ๆ | QA/Integration | integration test เท่านั้น | P1-D02, P1-G03, P1-H03 | output ผ่าน acceptance criteria |
+- [x] P1-A01: กำหนด contract กลางของ `job_manifest.json`, `artifact_manifest.json`, `service_status.json`
+  Owner: Orchestrator | Write Scope: `contracts/`, docs หรือ schema กลาง | Depends on: None | Deliverable: JSON schema + sample job
+- [ ] P1-A02: กำหนด MinIO object layout และ helper สำหรับ read/write artifact
+  Owner: Orchestrator | Write Scope: Orchestrator service เท่านั้น | Depends on: P1-A01 | Deliverable: helper upload/download/list artifact
+- [ ] P1-A03: ทำ Orchestrator API สำหรับ create job และ run pipeline
+  Owner: Orchestrator | Write Scope: Orchestrator service เท่านั้น | Depends on: P1-A01, P1-A02 | Deliverable: API create job/run job/status
+- [ ] P1-A04: ทำ service runner สำหรับเรียก `/run` ของแต่ละ service ตามลำดับ
+  Owner: Orchestrator | Write Scope: Orchestrator service เท่านั้น | Depends on: P1-A03 | Deliverable: pipeline runner + failure handling
+- [ ] P1-B01: ทำ Debug Frontend หน้า upload + create job
+  Owner: Frontend | Write Scope: Debug frontend เท่านั้น | Depends on: P1-A03 | Deliverable: upload และ create job ได้
+- [ ] P1-B02: ทำ Debug Frontend หน้า status/artifact viewer
+  Owner: Frontend | Write Scope: Debug frontend เท่านั้น | Depends on: P1-A01, P1-A03 | Deliverable: ดู `service_status.json` และ artifact links ได้
+- [ ] P1-B03: ทำ Debug Frontend หน้า preview/download output
+  Owner: Frontend | Write Scope: Debug frontend เท่านั้น | Depends on: P1-A03, P1-H02 | Deliverable: preview/download `final_9x16.mp4`
+- [ ] P1-C01: ทำ Validation Service
+  Owner: Validation | Write Scope: Validation service เท่านั้น | Depends on: P1-A01 | Deliverable: `/run` validate input/job config
+- [ ] P1-C02: ทำ Media Metadata Service ด้วย `ffprobe`
+  Owner: Media | Write Scope: Media metadata service เท่านั้น | Depends on: P1-A01 | Deliverable: `metadata.json`
+- [ ] P1-C03: ทำ Proxy/Frame Sampling Service
+  Owner: Media | Write Scope: Proxy/frame sampling service เท่านั้น | Depends on: P1-C02 | Deliverable: `proxy.mp4`, `sampled_frames.json`
+- [ ] P1-D01: เลือก model และทำ Body Detection Service skeleton
+  Owner: Vision AI | Write Scope: Body detection service เท่านั้น | Depends on: P1-A01 | Deliverable: `/run` อ่าน proxy และเขียน output mock ได้
+- [ ] P1-D02: ทำ body detection จริงบน sampled frames/proxy
+  Owner: Vision AI | Write Scope: Body detection service เท่านั้น | Depends on: P1-C03, P1-D01 | Deliverable: `body_tracks_raw.json`
+- [ ] P1-D03: ทำ fallback เมื่อ detect ไม่เจอ
+  Owner: Vision AI | Write Scope: Body detection service เท่านั้น | Depends on: P1-D02 | Deliverable: missing frames + confidence policy
+- [ ] P1-E01: ทำ Track Interpolation Service
+  Owner: Reframe | Write Scope: Track interpolation service เท่านั้น | Depends on: P1-D02 | Deliverable: `body_tracks_interpolated.json`
+- [ ] P1-E02: ทำ outlier removal และ missing strategy
+  Owner: Reframe | Write Scope: Track interpolation service เท่านั้น | Depends on: P1-E01 | Deliverable: track ที่ไม่กระโดดแรง
+- [ ] P1-F01: ทำ Reframe Planning Service
+  Owner: Reframe | Write Scope: Reframe planning service เท่านั้น | Depends on: P1-C02, P1-E01 | Deliverable: `reframe_plan_raw.json`
+- [ ] P1-F02: ทำ crop clamp และ subject framing rule
+  Owner: Reframe | Write Scope: Reframe planning service เท่านั้น | Depends on: P1-F01 | Deliverable: crop ไม่หลุดขอบ
+- [ ] P1-G01: ทำ easing function library
+  Owner: Smoothing | Write Scope: Easing/smoothing service เท่านั้น | Depends on: P1-A01 | Deliverable: `linear`, `easeOutCubic`, `easeInOutCubic`, `easeInOutSine`
+- [ ] P1-G02: ทำ Easing/Smoothing Service
+  Owner: Smoothing | Write Scope: Easing/smoothing service เท่านั้น | Depends on: P1-F01, P1-G01 | Deliverable: `reframe_plan_smooth.json`
+- [ ] P1-G03: ทำ velocity/acceleration limit และ dead zone
+  Owner: Smoothing | Write Scope: Easing/smoothing service เท่านั้น | Depends on: P1-G02 | Deliverable: crop path smooth และ clamp แล้ว
+- [ ] P1-H01: ทำ Render Plan Compiler Service
+  Owner: Renderer | Write Scope: Render plan compiler service เท่านั้น | Depends on: P1-C02, P1-G02 | Deliverable: `render_plan.json`
+- [ ] P1-H02: ทำ FFmpeg Renderer Service แบบ center crop/static crop ก่อน
+  Owner: Renderer | Write Scope: FFmpeg renderer service เท่านั้น | Depends on: P1-H01 | Deliverable: output 9:16 เล่นได้
+- [ ] P1-H03: ทำ FFmpeg Renderer ใช้ smooth crop plan
+  Owner: Renderer | Write Scope: FFmpeg renderer service เท่านั้น | Depends on: P1-G03, P1-H02 | Deliverable: output 9:16 ที่ pan ตาม crop plan
+- [ ] P1-I01: ทำ sample input/output fixture สำหรับทุก service
+  Owner: QA/Integration | Write Scope: `fixtures/` หรือ test data เท่านั้น | Depends on: P1-A01 | Deliverable: sample job + sample artifact
+- [ ] P1-I02: ทำ integration test pipeline ด้วย mock service
+  Owner: QA/Integration | Write Scope: integration test เท่านั้น | Depends on: P1-A04, P1-I01 | Deliverable: pipeline วิ่งครบด้วย mock artifact
+- [ ] P1-I03: ทำ end-to-end test ด้วยวิดีโอจริงสั้น ๆ
+  Owner: QA/Integration | Write Scope: integration test เท่านั้น | Depends on: P1-D02, P1-G03, P1-H03 | Deliverable: output ผ่าน acceptance criteria
 
 Source of truth for P1-A01 contract files lives in `contracts/CONTRACTS.md` and the JSON Schemas under `contracts/`.
 
