@@ -1,0 +1,126 @@
+"""Core orchestration service for job creation, status lookup, and pipeline execution."""
+
+from __future__ import annotations
+
+from copy import deepcopy
+import hashlib
+import json
+from pathlib import Path
+from typing import Any
+from uuid import uuid4
+
+from .artifact_helper import ArtifactHelper
+from .contracts import repo_root
+from .manifest_manager import ManifestManager
+from .manifest_manager import utc_now
+from .object_store import ObjectStore
+from .path_resolver import input_path
+from .path_resolver import job_prefix
+from .path_resolver import manifest_path
+from .path_resolver import output_path
+from .path_resolver import validate_job_id
+from .pipeline_runner import MockPipelineRunner
+from .pipeline_runner import PipelineRunner
+
+
+class OrchestratorService:
+    def __init__(
+        self,
+        store: ObjectStore,
+        *,
+        runner: PipelineRunner | None = None,
+        job_manifest_template: dict[str, Any] | None = None,
+    ) -> None:
+        self.store = store
+        self.manifest_manager = ManifestManager(store)
+        self.artifact_helper = ArtifactHelper(store, self.manifest_manager)
+        self.runner = runner or MockPipelineRunner()
+        self.job_manifest_template = job_manifest_template or _load_job_manifest_template()
+
+    def create_job(
+        self,
+        *,
+        source_bytes: bytes,
+        original_filename: str,
+        content_type: str = "video/mp4",
+        created_by: str = "debug_frontend",
+        job_id: str | None = None,
+    ) -> dict[str, Any]:
+        if not source_bytes:
+            raise ValueError("source_bytes must not be empty.")
+
+        created_at = utc_now()
+        resolved_job_id = validate_job_id(job_id or f"job_{uuid4().hex[:12]}")
+        resolved_filename = original_filename or "source.mp4"
+
+        job_manifest = self._build_job_manifest(
+            job_id=resolved_job_id,
+            created_at=created_at,
+            created_by=created_by,
+            original_filename=resolved_filename,
+            content_type=content_type,
+            checksum_sha256=hashlib.sha256(source_bytes).hexdigest(),
+        )
+
+        self.artifact_helper.upload_source_video(
+            resolved_job_id,
+            source_bytes,
+            content_type=content_type,
+        )
+        self.manifest_manager.create_initial_job_state(job_manifest)
+        return self.get_job_status(resolved_job_id)
+
+    def get_job_status(self, job_id: str) -> dict[str, Any]:
+        resolved_job_id = validate_job_id(job_id)
+        service_status = self.manifest_manager.read_service_status(resolved_job_id)
+        artifact_manifest = self.manifest_manager.read_artifact_manifest(resolved_job_id)
+        return {
+            "job_id": resolved_job_id,
+            "service_status": service_status,
+            "artifacts": artifact_manifest["artifacts"],
+            "paths": {
+                "job_prefix": job_prefix(resolved_job_id),
+                "input": input_path(resolved_job_id),
+                "job_manifest": manifest_path(resolved_job_id, "job_manifest"),
+                "artifact_manifest": manifest_path(resolved_job_id, "artifact_manifest"),
+                "service_status": manifest_path(resolved_job_id, "service_status"),
+                "output": output_path(resolved_job_id),
+            },
+        }
+
+    def run_job(self, job_id: str) -> dict[str, Any]:
+        resolved_job_id = validate_job_id(job_id)
+        self.manifest_manager.read_job_manifest(resolved_job_id)
+        self.runner.run(
+            job_id=resolved_job_id,
+            manifest_manager=self.manifest_manager,
+            artifact_helper=self.artifact_helper,
+        )
+        return self.get_job_status(resolved_job_id)
+
+    def _build_job_manifest(
+        self,
+        *,
+        job_id: str,
+        created_at: str,
+        created_by: str,
+        original_filename: str,
+        content_type: str,
+        checksum_sha256: str,
+    ) -> dict[str, Any]:
+        manifest = deepcopy(self.job_manifest_template)
+        manifest["job_id"] = job_id
+        manifest["created_at"] = created_at
+        manifest["created_by"] = created_by
+        manifest["input"]["source_video"]["object_key"] = input_path(job_id)
+        manifest["input"]["source_video"]["original_filename"] = original_filename
+        manifest["input"]["source_video"]["uploaded_at"] = created_at
+        manifest["input"]["source_video"]["content_type"] = content_type
+        manifest["input"]["source_video"]["checksum_sha256"] = checksum_sha256
+        manifest["target_output"]["object_key"] = output_path(job_id)
+        return manifest
+
+
+def _load_job_manifest_template() -> dict[str, Any]:
+    template_path = repo_root() / "contracts" / "examples" / "job_manifest.sample.json"
+    return json.loads(template_path.read_text(encoding="utf-8"))

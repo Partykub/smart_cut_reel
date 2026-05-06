@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+
+.venv/
+venv/
+
+.mypy_cache/
+.pytest_cache/
+
+.orchestrator-data/

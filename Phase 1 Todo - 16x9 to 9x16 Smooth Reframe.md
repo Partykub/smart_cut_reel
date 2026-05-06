@@ -423,9 +423,9 @@ Done when:
 
 - [x] P1-A01: กำหนด contract กลางของ `job_manifest.json`, `artifact_manifest.json`, `service_status.json`
   Owner: Orchestrator | Write Scope: `contracts/`, docs หรือ schema กลาง | Depends on: None | Deliverable: JSON schema + sample job
-- [ ] P1-A02: กำหนด MinIO object layout และ helper สำหรับ read/write artifact
+- [x] P1-A02: กำหนด MinIO object layout และ helper สำหรับ read/write artifact
   Owner: Orchestrator | Write Scope: Orchestrator service เท่านั้น | Depends on: P1-A01 | Deliverable: helper upload/download/list artifact
-- [ ] P1-A03: ทำ Orchestrator API สำหรับ create job และ run pipeline
+- [x] P1-A03: ทำ Orchestrator API สำหรับ create job และ run pipeline
   Owner: Orchestrator | Write Scope: Orchestrator service เท่านั้น | Depends on: P1-A01, P1-A02 | Deliverable: API create job/run job/status
 - [ ] P1-A04: ทำ service runner สำหรับเรียก `/run` ของแต่ละ service ตามลำดับ
   Owner: Orchestrator | Write Scope: Orchestrator service เท่านั้น | Depends on: P1-A03 | Deliverable: pipeline runner + failure handling
@@ -476,7 +476,7 @@ Done when:
 
 Source of truth for P1-A01 contract files lives in `contracts/CONTRACTS.md` and the JSON Schemas under `contracts/`.
 
-สถานะล่าสุด: P1-A01 เสร็จแล้ว และผ่าน schema validation แล้ว.
+สถานะล่าสุด: P1-A01, P1-A02, และ P1-A03 เสร็จแล้ว โดย P1-A03 มี FastAPI endpoint สำหรับ create job, get status, และ run job พร้อม mock runner สำหรับ bridge ไป P1-A04.
 
 ### งานที่ทำพร้อมกันได้ทันที
 
