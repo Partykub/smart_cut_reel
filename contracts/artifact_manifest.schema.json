@@ -1,0 +1,277 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://smart-cut-reel/contracts/artifact_manifest.schema.json",
+    "title": "Phase 1 Artifact Manifest",
+    "description": "Registry of artifacts and outputs produced by the Phase 1 smooth reframe pipeline.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "schema_version",
+        "job_id",
+        "updated_at",
+        "artifacts"
+    ],
+    "properties": {
+        "schema_version": {
+            "type": "string",
+            "const": "1.0.0"
+        },
+        "job_id": {
+            "type": "string",
+            "pattern": "^job_[A-Za-z0-9_-]+$"
+        },
+        "updated_at": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "artifacts": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "metadata": {
+                    "$ref": "#/$defs/metadataArtifact"
+                },
+                "proxy": {
+                    "$ref": "#/$defs/proxyArtifact"
+                },
+                "sampled_frames": {
+                    "$ref": "#/$defs/sampledFramesArtifact"
+                },
+                "body_tracks_raw": {
+                    "$ref": "#/$defs/bodyTracksRawArtifact"
+                },
+                "body_tracks_interpolated": {
+                    "$ref": "#/$defs/bodyTracksInterpolatedArtifact"
+                },
+                "reframe_plan_raw": {
+                    "$ref": "#/$defs/reframePlanRawArtifact"
+                },
+                "reframe_plan_smooth": {
+                    "$ref": "#/$defs/reframePlanSmoothArtifact"
+                },
+                "render_plan": {
+                    "$ref": "#/$defs/renderPlanArtifact"
+                },
+                "final_9x16": {
+                    "$ref": "#/$defs/finalOutputArtifact"
+                }
+            }
+        }
+    },
+    "$defs": {
+        "baseArtifact": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "object_key",
+                "produced_by",
+                "created_at",
+                "content_type"
+            ],
+            "properties": {
+                "object_key": {
+                    "type": "string"
+                },
+                "produced_by": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "content_type": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "size_bytes": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "checksum_sha256": {
+                    "type": "string",
+                    "pattern": "^[A-Fa-f0-9]{64}$"
+                }
+            }
+        },
+        "metadataArtifact": {
+            "allOf": [
+                {
+                    "$ref": "#/$defs/baseArtifact"
+                },
+                {
+                    "properties": {
+                        "object_key": {
+                            "pattern": "^jobs/[^/]+/artifacts/metadata\\.json$"
+                        },
+                        "produced_by": {
+                            "const": "media_metadata"
+                        },
+                        "content_type": {
+                            "const": "application/json"
+                        }
+                    }
+                }
+            ]
+        },
+        "proxyArtifact": {
+            "allOf": [
+                {
+                    "$ref": "#/$defs/baseArtifact"
+                },
+                {
+                    "properties": {
+                        "object_key": {
+                            "pattern": "^jobs/[^/]+/artifacts/proxy\\.mp4$"
+                        },
+                        "produced_by": {
+                            "const": "proxy_frame_sampling"
+                        },
+                        "content_type": {
+                            "const": "video/mp4"
+                        }
+                    }
+                }
+            ]
+        },
+        "sampledFramesArtifact": {
+            "allOf": [
+                {
+                    "$ref": "#/$defs/baseArtifact"
+                },
+                {
+                    "properties": {
+                        "object_key": {
+                            "pattern": "^jobs/[^/]+/artifacts/sampled_frames\\.json$"
+                        },
+                        "produced_by": {
+                            "const": "proxy_frame_sampling"
+                        },
+                        "content_type": {
+                            "const": "application/json"
+                        }
+                    }
+                }
+            ]
+        },
+        "bodyTracksRawArtifact": {
+            "allOf": [
+                {
+                    "$ref": "#/$defs/baseArtifact"
+                },
+                {
+                    "properties": {
+                        "object_key": {
+                            "pattern": "^jobs/[^/]+/artifacts/body_tracks_raw\\.json$"
+                        },
+                        "produced_by": {
+                            "const": "body_detection"
+                        },
+                        "content_type": {
+                            "const": "application/json"
+                        }
+                    }
+                }
+            ]
+        },
+        "bodyTracksInterpolatedArtifact": {
+            "allOf": [
+                {
+                    "$ref": "#/$defs/baseArtifact"
+                },
+                {
+                    "properties": {
+                        "object_key": {
+                            "pattern": "^jobs/[^/]+/artifacts/body_tracks_interpolated\\.json$"
+                        },
+                        "produced_by": {
+                            "const": "track_interpolation"
+                        },
+                        "content_type": {
+                            "const": "application/json"
+                        }
+                    }
+                }
+            ]
+        },
+        "reframePlanRawArtifact": {
+            "allOf": [
+                {
+                    "$ref": "#/$defs/baseArtifact"
+                },
+                {
+                    "properties": {
+                        "object_key": {
+                            "pattern": "^jobs/[^/]+/artifacts/reframe_plan_raw\\.json$"
+                        },
+                        "produced_by": {
+                            "const": "reframe_planning"
+                        },
+                        "content_type": {
+                            "const": "application/json"
+                        }
+                    }
+                }
+            ]
+        },
+        "reframePlanSmoothArtifact": {
+            "allOf": [
+                {
+                    "$ref": "#/$defs/baseArtifact"
+                },
+                {
+                    "properties": {
+                        "object_key": {
+                            "pattern": "^jobs/[^/]+/artifacts/reframe_plan_smooth\\.json$"
+                        },
+                        "produced_by": {
+                            "const": "easing_smoothing"
+                        },
+                        "content_type": {
+                            "const": "application/json"
+                        }
+                    }
+                }
+            ]
+        },
+        "renderPlanArtifact": {
+            "allOf": [
+                {
+                    "$ref": "#/$defs/baseArtifact"
+                },
+                {
+                    "properties": {
+                        "object_key": {
+                            "pattern": "^jobs/[^/]+/artifacts/render_plan\\.json$"
+                        },
+                        "produced_by": {
+                            "const": "render_plan_compiler"
+                        },
+                        "content_type": {
+                            "const": "application/json"
+                        }
+                    }
+                }
+            ]
+        },
+        "finalOutputArtifact": {
+            "allOf": [
+                {
+                    "$ref": "#/$defs/baseArtifact"
+                },
+                {
+                    "properties": {
+                        "object_key": {
+                            "pattern": "^jobs/[^/]+/outputs/final_9x16\\.mp4$"
+                        },
+                        "produced_by": {
+                            "const": "ffmpeg_renderer"
+                        },
+                        "content_type": {
+                            "const": "video/mp4"
+                        }
+                    }
+                }
+            ]
+        }
+    }
+}

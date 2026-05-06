@@ -1,0 +1,325 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://smart-cut-reel/contracts/job_manifest.schema.json",
+    "title": "Phase 1 Job Manifest",
+    "description": "Phase 1 single-input job contract for 16:9 to 9:16 smooth reframing.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "schema_version",
+        "job_id",
+        "created_at",
+        "created_by",
+        "input",
+        "target_output",
+        "pipeline"
+    ],
+    "properties": {
+        "schema_version": {
+            "type": "string",
+            "const": "1.0.0"
+        },
+        "job_id": {
+            "type": "string",
+            "pattern": "^job_[A-Za-z0-9_-]+$"
+        },
+        "created_at": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "created_by": {
+            "type": "string",
+            "enum": [
+                "orchestrator",
+                "debug_frontend",
+                "integration_test"
+            ]
+        },
+        "input": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "source_video"
+            ],
+            "properties": {
+                "source_video": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "object_key",
+                        "original_filename",
+                        "uploaded_at"
+                    ],
+                    "properties": {
+                        "object_key": {
+                            "type": "string",
+                            "pattern": "^jobs/[^/]+/input/source\\.mp4$"
+                        },
+                        "original_filename": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "uploaded_at": {
+                            "type": "string",
+                            "format": "date-time"
+                        },
+                        "content_type": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "checksum_sha256": {
+                            "type": "string",
+                            "pattern": "^[A-Fa-f0-9]{64}$"
+                        }
+                    }
+                }
+            }
+        },
+        "target_output": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "aspect_ratio",
+                "resolution",
+                "format",
+                "object_key"
+            ],
+            "properties": {
+                "aspect_ratio": {
+                    "type": "string",
+                    "const": "9:16"
+                },
+                "resolution": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "width",
+                        "height"
+                    ],
+                    "properties": {
+                        "width": {
+                            "type": "integer",
+                            "minimum": 2,
+                            "multipleOf": 2
+                        },
+                        "height": {
+                            "type": "integer",
+                            "minimum": 2,
+                            "multipleOf": 2
+                        }
+                    }
+                },
+                "format": {
+                    "type": "string",
+                    "const": "mp4"
+                },
+                "object_key": {
+                    "type": "string",
+                    "pattern": "^jobs/[^/]+/outputs/final_9x16\\.mp4$"
+                }
+            }
+        },
+        "pipeline": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "pipeline_id",
+                "steps"
+            ],
+            "properties": {
+                "pipeline_id": {
+                    "type": "string",
+                    "const": "phase1_smooth_reframe_16x9_to_9x16"
+                },
+                "steps": {
+                    "type": "array",
+                    "const": [
+                        "validation",
+                        "media_metadata",
+                        "proxy_frame_sampling",
+                        "body_detection",
+                        "track_interpolation",
+                        "reframe_planning",
+                        "easing_smoothing",
+                        "render_plan_compiler",
+                        "ffmpeg_renderer"
+                    ]
+                }
+            }
+        },
+        "service_config": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "proxy_frame_sampling": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "sample_fps",
+                        "proxy_height"
+                    ],
+                    "properties": {
+                        "sample_fps": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "proxy_height": {
+                            "type": "integer",
+                            "minimum": 2,
+                            "multipleOf": 2
+                        }
+                    }
+                },
+                "body_detection": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "subject_selection_strategy": {
+                            "type": "string",
+                            "enum": [
+                                "largest_box",
+                                "nearest_previous_crop_center",
+                                "highest_confidence"
+                            ]
+                        },
+                        "min_confidence": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                        }
+                    }
+                },
+                "track_interpolation": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "max_gap_fill_seconds",
+                        "max_center_jump_per_second",
+                        "missing_strategy"
+                    ],
+                    "properties": {
+                        "max_gap_fill_seconds": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "max_center_jump_per_second": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "missing_strategy": {
+                            "type": "string",
+                            "enum": [
+                                "hold_then_center",
+                                "hold_last",
+                                "center_crop"
+                            ]
+                        }
+                    }
+                },
+                "reframe_planning": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "framing_mode": {
+                            "type": "string",
+                            "enum": [
+                                "center_subject",
+                                "rule_of_thirds"
+                            ]
+                        },
+                        "clamp_to_source": {
+                            "type": "boolean"
+                        }
+                    }
+                },
+                "easing_smoothing": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "smoothing_method",
+                        "smoothing_strength",
+                        "max_velocity_px_per_second",
+                        "max_acceleration_px_per_second2",
+                        "easing",
+                        "dead_zone_px"
+                    ],
+                    "properties": {
+                        "smoothing_method": {
+                            "type": "string",
+                            "enum": [
+                                "moving_average",
+                                "exponential",
+                                "kalman"
+                            ]
+                        },
+                        "smoothing_strength": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                        },
+                        "max_velocity_px_per_second": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "max_acceleration_px_per_second2": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "easing": {
+                            "type": "string",
+                            "enum": [
+                                "linear",
+                                "easeOutCubic",
+                                "easeInOutCubic",
+                                "easeInOutSine"
+                            ]
+                        },
+                        "dead_zone_px": {
+                            "type": "number",
+                            "minimum": 0
+                        }
+                    }
+                },
+                "render_plan_compiler": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "crop_representation": {
+                            "type": "string",
+                            "enum": [
+                                "keyframe_list",
+                                "per_frame_list",
+                                "ffmpeg_expression_file"
+                            ]
+                        },
+                        "audio_policy": {
+                            "type": "string",
+                            "enum": [
+                                "copy_if_possible_else_aac",
+                                "aac_transcode"
+                            ]
+                        }
+                    }
+                },
+                "ffmpeg_renderer": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "video_codec": {
+                            "type": "string",
+                            "enum": [
+                                "libx264"
+                            ]
+                        },
+                        "audio_codec": {
+                            "type": "string",
+                            "enum": [
+                                "aac"
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

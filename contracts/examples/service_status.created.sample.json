@@ -1,0 +1,56 @@
+{
+    "schema_version": "1.0.0",
+    "job_id": "job_001",
+    "status": "pending",
+    "current_step": null,
+    "updated_at": "2026-05-06T10:00:00Z",
+    "steps": {
+        "validation": {
+            "status": "pending",
+            "started_at": null,
+            "finished_at": null
+        },
+        "media_metadata": {
+            "status": "pending",
+            "started_at": null,
+            "finished_at": null
+        },
+        "proxy_frame_sampling": {
+            "status": "pending",
+            "started_at": null,
+            "finished_at": null
+        },
+        "body_detection": {
+            "status": "pending",
+            "started_at": null,
+            "finished_at": null
+        },
+        "track_interpolation": {
+            "status": "pending",
+            "started_at": null,
+            "finished_at": null
+        },
+        "reframe_planning": {
+            "status": "pending",
+            "started_at": null,
+            "finished_at": null
+        },
+        "easing_smoothing": {
+            "status": "pending",
+            "started_at": null,
+            "finished_at": null
+        },
+        "render_plan_compiler": {
+            "status": "pending",
+            "started_at": null,
+            "finished_at": null
+        },
+        "ffmpeg_renderer": {
+            "status": "pending",
+            "started_at": null,
+            "finished_at": null
+        }
+    },
+    "warnings": [],
+    "errors": []
+}

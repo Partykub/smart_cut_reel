@@ -1,0 +1,28 @@
+{
+    "schema_version": "1.0.0",
+    "job_id": "job_001",
+    "updated_at": "2026-05-06T10:00:12Z",
+    "artifacts": {
+        "metadata": {
+            "object_key": "jobs/job_001/artifacts/metadata.json",
+            "produced_by": "media_metadata",
+            "created_at": "2026-05-06T10:00:05Z",
+            "content_type": "application/json",
+            "size_bytes": 912
+        },
+        "proxy": {
+            "object_key": "jobs/job_001/artifacts/proxy.mp4",
+            "produced_by": "proxy_frame_sampling",
+            "created_at": "2026-05-06T10:00:10Z",
+            "content_type": "video/mp4",
+            "size_bytes": 15400321
+        },
+        "sampled_frames": {
+            "object_key": "jobs/job_001/artifacts/sampled_frames.json",
+            "produced_by": "proxy_frame_sampling",
+            "created_at": "2026-05-06T10:00:10Z",
+            "content_type": "application/json",
+            "size_bytes": 4096
+        }
+    }
+}

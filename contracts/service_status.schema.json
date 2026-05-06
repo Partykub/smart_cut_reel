@@ -1,0 +1,188 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://smart-cut-reel/contracts/service_status.schema.json",
+    "title": "Phase 1 Service Status",
+    "description": "Execution status contract for the Phase 1 smooth reframe pipeline.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "schema_version",
+        "job_id",
+        "status",
+        "current_step",
+        "updated_at",
+        "steps",
+        "warnings",
+        "errors"
+    ],
+    "properties": {
+        "schema_version": {
+            "type": "string",
+            "const": "1.0.0"
+        },
+        "job_id": {
+            "type": "string",
+            "pattern": "^job_[A-Za-z0-9_-]+$"
+        },
+        "status": {
+            "type": "string",
+            "enum": [
+                "pending",
+                "running",
+                "success",
+                "failed"
+            ]
+        },
+        "current_step": {
+            "anyOf": [
+                {
+                    "$ref": "#/$defs/stepName"
+                },
+                {
+                    "type": "null"
+                }
+            ]
+        },
+        "updated_at": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "steps": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "validation",
+                "media_metadata",
+                "proxy_frame_sampling",
+                "body_detection",
+                "track_interpolation",
+                "reframe_planning",
+                "easing_smoothing",
+                "render_plan_compiler",
+                "ffmpeg_renderer"
+            ],
+            "properties": {
+                "validation": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "media_metadata": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "proxy_frame_sampling": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "body_detection": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "track_interpolation": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "reframe_planning": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "easing_smoothing": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "render_plan_compiler": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "ffmpeg_renderer": {
+                    "$ref": "#/$defs/stepState"
+                }
+            }
+        },
+        "warnings": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/warning"
+            }
+        },
+        "errors": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "minLength": 1
+            }
+        }
+    },
+    "$defs": {
+        "stepName": {
+            "type": "string",
+            "enum": [
+                "validation",
+                "media_metadata",
+                "proxy_frame_sampling",
+                "body_detection",
+                "track_interpolation",
+                "reframe_planning",
+                "easing_smoothing",
+                "render_plan_compiler",
+                "ffmpeg_renderer"
+            ]
+        },
+        "nullableDateTime": {
+            "anyOf": [
+                {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                {
+                    "type": "null"
+                }
+            ]
+        },
+        "stepState": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "status",
+                "started_at",
+                "finished_at"
+            ],
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "pending",
+                        "running",
+                        "success",
+                        "failed"
+                    ]
+                },
+                "started_at": {
+                    "$ref": "#/$defs/nullableDateTime"
+                },
+                "finished_at": {
+                    "$ref": "#/$defs/nullableDateTime"
+                }
+            }
+        },
+        "warning": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "code",
+                "message",
+                "step",
+                "created_at"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "pattern": "^[A-Z0-9_]+$"
+                },
+                "message": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "step": {
+                    "$ref": "#/$defs/stepName"
+                },
+                "created_at": {
+                    "type": "string",
+                    "format": "date-time"
+                }
+            }
+        }
+    }
+}

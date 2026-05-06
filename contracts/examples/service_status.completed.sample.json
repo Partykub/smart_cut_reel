@@ -1,0 +1,63 @@
+{
+    "schema_version": "1.0.0",
+    "job_id": "job_001",
+    "status": "success",
+    "current_step": null,
+    "updated_at": "2026-05-06T10:02:30Z",
+    "steps": {
+        "validation": {
+            "status": "success",
+            "started_at": "2026-05-06T10:00:01Z",
+            "finished_at": "2026-05-06T10:00:02Z"
+        },
+        "media_metadata": {
+            "status": "success",
+            "started_at": "2026-05-06T10:00:03Z",
+            "finished_at": "2026-05-06T10:00:05Z"
+        },
+        "proxy_frame_sampling": {
+            "status": "success",
+            "started_at": "2026-05-06T10:00:06Z",
+            "finished_at": "2026-05-06T10:00:10Z"
+        },
+        "body_detection": {
+            "status": "success",
+            "started_at": "2026-05-06T10:00:11Z",
+            "finished_at": "2026-05-06T10:00:21Z"
+        },
+        "track_interpolation": {
+            "status": "success",
+            "started_at": "2026-05-06T10:00:22Z",
+            "finished_at": "2026-05-06T10:00:28Z"
+        },
+        "reframe_planning": {
+            "status": "success",
+            "started_at": "2026-05-06T10:00:29Z",
+            "finished_at": "2026-05-06T10:00:37Z"
+        },
+        "easing_smoothing": {
+            "status": "success",
+            "started_at": "2026-05-06T10:00:38Z",
+            "finished_at": "2026-05-06T10:00:47Z"
+        },
+        "render_plan_compiler": {
+            "status": "success",
+            "started_at": "2026-05-06T10:00:48Z",
+            "finished_at": "2026-05-06T10:00:55Z"
+        },
+        "ffmpeg_renderer": {
+            "status": "success",
+            "started_at": "2026-05-06T10:00:56Z",
+            "finished_at": "2026-05-06T10:02:29Z"
+        }
+    },
+    "warnings": [
+        {
+            "code": "BODY_DETECTION_MISSING_FRAMES",
+            "message": "Body detection missed 3 sampled frames and fell back to hold-then-center behavior.",
+            "step": "body_detection",
+            "created_at": "2026-05-06T10:00:21Z"
+        }
+    ],
+    "errors": []
+}

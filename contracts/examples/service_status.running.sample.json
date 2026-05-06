@@ -1,0 +1,56 @@
+{
+    "schema_version": "1.0.0",
+    "job_id": "job_001",
+    "status": "running",
+    "current_step": "body_detection",
+    "updated_at": "2026-05-06T10:00:12Z",
+    "steps": {
+        "validation": {
+            "status": "success",
+            "started_at": "2026-05-06T10:00:01Z",
+            "finished_at": "2026-05-06T10:00:02Z"
+        },
+        "media_metadata": {
+            "status": "success",
+            "started_at": "2026-05-06T10:00:03Z",
+            "finished_at": "2026-05-06T10:00:05Z"
+        },
+        "proxy_frame_sampling": {
+            "status": "success",
+            "started_at": "2026-05-06T10:00:06Z",
+            "finished_at": "2026-05-06T10:00:10Z"
+        },
+        "body_detection": {
+            "status": "running",
+            "started_at": "2026-05-06T10:00:11Z",
+            "finished_at": null
+        },
+        "track_interpolation": {
+            "status": "pending",
+            "started_at": null,
+            "finished_at": null
+        },
+        "reframe_planning": {
+            "status": "pending",
+            "started_at": null,
+            "finished_at": null
+        },
+        "easing_smoothing": {
+            "status": "pending",
+            "started_at": null,
+            "finished_at": null
+        },
+        "render_plan_compiler": {
+            "status": "pending",
+            "started_at": null,
+            "finished_at": null
+        },
+        "ffmpeg_renderer": {
+            "status": "pending",
+            "started_at": null,
+            "finished_at": null
+        }
+    },
+    "warnings": [],
+    "errors": []
+}
