@@ -67,6 +67,8 @@ jobs/{job_id}/
 
 **Purpose:** ใช้ debug pipeline ไม่ใช่ product UI
 
+**สถานะย่อย (2026-05-07):** มี Next.js debug app ใน `frontend/` แล้ว — รองรับ upload + create job, ดู `service_status` + artifacts, ปุ่ม Run pipeline (ผ่าน proxy ไป Orchestrator). ยังไม่มี preview/download วิดีโอ (`P1-B03`).
+
 Todo:
 
 - Upload วิดีโอ 1 ไฟล์
@@ -429,10 +431,10 @@ Done when:
   Owner: Orchestrator | Write Scope: Orchestrator service เท่านั้น | Depends on: P1-A01, P1-A02 | Deliverable: API create job/run job/status
 - [x] P1-A04: ทำ service runner สำหรับเรียก `/run` ของแต่ละ service ตามลำดับ
   Owner: Orchestrator | Write Scope: Orchestrator service เท่านั้น | Depends on: P1-A03 | Deliverable: pipeline runner + failure handling
-- [ ] P1-B01: ทำ Debug Frontend หน้า upload + create job
-  Owner: Frontend | Assigned To: ฟิล์ม | Write Scope: Debug frontend เท่านั้น | Depends on: P1-A03 | Deliverable: upload และ create job ได้
-- [ ] P1-B02: ทำ Debug Frontend หน้า status/artifact viewer
-  Owner: Frontend | Assigned To: ฟิล์ม | Write Scope: Debug frontend เท่านั้น | Depends on: P1-A01, P1-A03 | Deliverable: ดู `service_status.json` และ artifact links ได้
+- [x] P1-B01: ทำ Debug Frontend หน้า upload + create job
+  Owner: Frontend | Assigned To: ฟิล์ม | Write Scope: Debug frontend เท่านั้น | Depends on: P1-A03 | Deliverable: upload และ create job ได้ — ส่งมอบใน `frontend/` (Next.js App Router + proxy `/api/jobs`)
+- [x] P1-B02: ทำ Debug Frontend หน้า status/artifact viewer
+  Owner: Frontend | Assigned To: ฟิล์ม | Write Scope: Debug frontend เท่านั้น | Depends on: P1-A01, P1-A03 | Deliverable: ดู `service_status.json` และ artifact links ได้ — ส่งมอบใน `frontend/` (หน้า `/jobs/[jobId]`, Run + polling, รายการ artifacts)
 - [ ] P1-B03: ทำ Debug Frontend หน้า preview/download output
   Owner: Frontend | Assigned To: ฟิล์ม | Write Scope: Debug frontend เท่านั้น | Depends on: P1-A03, P1-H02 | Deliverable: preview/download `final_9x16.mp4`
 - [ ] P1-C01: ทำ Validation Service
@@ -455,8 +457,8 @@ Done when:
   Owner: Reframe | Assigned To: นนท์ | Write Scope: Reframe planning service เท่านั้น | Depends on: P1-C02, P1-E01 | Deliverable: `reframe_plan_raw.json`
 - [ ] P1-F02: ทำ crop clamp และ subject framing rule
   Owner: Reframe | Assigned To: นนท์ | Write Scope: Reframe planning service เท่านั้น | Depends on: P1-F01 | Deliverable: crop ไม่หลุดขอบ
-- [ ] P1-G01: ทำ easing function library
-  Owner: Smoothing | Assigned To: ฟิล์ม | Write Scope: Easing/smoothing service เท่านั้น | Depends on: P1-A01 | Deliverable: `linear`, `easeOutCubic`, `easeInOutCubic`, `easeInOutSine`
+- [x] P1-G01: ทำ easing function library
+  Owner: Smoothing | Assigned To: ฟิล์ม | Write Scope: Easing/smoothing service เท่านั้น | Depends on: P1-A01 | Deliverable: `linear`, `easeOutCubic`, `easeInOutCubic`, `easeInOutSine` — Python ใน `services/easing_smoothing/` + TypeScript mirror ใน `frontend/src/lib/easing/` (พร้อม unit tests)
 - [ ] P1-G02: ทำ Easing/Smoothing Service
   Owner: Smoothing | Assigned To: ฟิล์ม | Write Scope: Easing/smoothing service เท่านั้น | Depends on: P1-F01, P1-G01 | Deliverable: `reframe_plan_smooth.json`
 - [ ] P1-G03: ทำ velocity/acceleration limit และ dead zone
@@ -476,18 +478,18 @@ Done when:
 
 Source of truth for P1-A01 contract files lives in `contracts/CONTRACTS.md` and the JSON Schemas under `contracts/`.
 
-สถานะล่าสุด: P1-A01, P1-A02, P1-A03, และ P1-A04 เสร็จแล้ว โดย P1-A04 เพิ่ม HTTP service runner ที่เรียก `/run` ตามลำดับ, register artifacts/warnings, handle hard-fail ต่อ step, และยัง fallback เป็น mock runner เมื่อยังไม่ config service endpoints.
+สถานะล่าสุด: P1-A01, P1-A02, P1-A03, และ P1-A04 เสร็จแล้ว โดย P1-A04 เพิ่ม HTTP service runner ที่เรียก `/run` ตามลำดับ, register artifacts/warnings, handle hard-fail ต่อ step, และยัง fallback เป็น mock runner เมื่อยังไม่ config service endpoints. **เพิ่ม (2026-05-07):** P1-B01, P1-B02, และ P1-G01 เสร็จแล้ว (ฟิล์ม) — Debug UI อยู่ที่ `frontend/`; easing library อยู่ที่ `services/easing_smoothing/` และ `frontend/src/lib/easing/`.
 
 ### งานที่เริ่มได้ทันทีตอนนี้
 
 - ปาร์ตี้: เริ่ม `P1-C01`, `P1-C02`, และ `P1-D01` ได้ทันทีจาก contract ปัจจุบันและ Orchestrator ที่มีอยู่แล้ว
-- ฟิล์ม: เริ่ม `P1-B01`, `P1-B02`, และ `P1-G01` ได้ทันที โดย `P1-B02` ใช้ mock `service_status.json` ไปก่อนได้
+- ฟิล์ม: `P1-B01`, `P1-B02`, `P1-G01` เสร็จแล้ว — ขั้นถัดไปคือ `P1-G02` (รอ `P1-F01` เท่านั้น เพราะ `P1-G01` พร้อมแล้ว) หรือรอ `P1-H02` แล้วทำ `P1-B03`
 - นนท์: เริ่ม `P1-I01` ได้ทันที และเริ่ม scaffold ของ `P1-I02` ด้วย mock HTTP services ได้ทันที
 
 ### งานที่ต้องรอในแต่ละ lane
 
 - ปาร์ตี้: `P1-C03` รอ `P1-C02`; `P1-D02` รอ `P1-C03` และ `P1-D01`; `P1-D03` รอ `P1-D02`
-- ฟิล์ม: `P1-B03` รอ `P1-H02`; `P1-G02` รอ `P1-F01` และ `P1-G01`; `P1-G03` รอ `P1-G02`; `P1-H01` รอ `P1-C02` และ `P1-G02`; `P1-H02` รอ `P1-H01`; `P1-H03` รอ `P1-G03` และ `P1-H02`
+- ฟิล์ม: `P1-B03` รอ `P1-H02`; `P1-G02` รอ `P1-F01` เท่านั้น (`P1-G01` เสร็จแล้ว); `P1-G03` รอ `P1-G02`; `P1-H01` รอ `P1-C02` และ `P1-G02`; `P1-H02` รอ `P1-H01`; `P1-H03` รอ `P1-G03` และ `P1-H02`
 - นนท์: `P1-I02` รอ `P1-I01` ในส่วน integration จริง; `P1-E01` รอ `P1-D02`; `P1-E02` รอ `P1-E01`; `P1-F01` รอ `P1-C02` และ `P1-E01`; `P1-F02` รอ `P1-F01`; `P1-I03` รอ `P1-D02`, `P1-G03`, และ `P1-H03`
 
 ### Dependency กลางของทั้งโปรเจกต์

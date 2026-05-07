@@ -112,14 +112,15 @@ Run the current focused test suite with:
 ## Known Limitations
 
 - Real HTTP orchestration depends on `ORCHESTRATOR_SERVICE_ENDPOINTS`; without it, `run_job` still falls back to the mock runner.
-- No Debug Frontend yet.
+- Debug Frontend (MVP): Next.js app under `frontend/` supports upload/create job, job status + artifact list, and pipeline run (proxied to the orchestrator). Preview/download of `final_9x16.mp4` is not implemented yet (P1-B03).
 - No Validation, Media Metadata, or downstream AI/reframe services implemented yet.
 - No production deployment or environment configuration is documented yet.
 
 ## Recommended Immediate Task Order
 
-1. P1-A04
+1. P1-A04 (done)
 2. P1-C01
 3. P1-C02
-4. P1-B01
-5. P1-B02
+4. P1-B01 (done)
+5. P1-B02 (done)
+6. P1-G01 (done) — next for Film: P1-G02 after P1-F01, or P1-B03 after P1-H02
