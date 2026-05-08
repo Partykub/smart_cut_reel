@@ -7,6 +7,7 @@ from services.common.runtime import RunMinIO
 from services.common.runtime import RunRequest
 from services.common.runtime import build_context
 from services.easing_smoothing.service import EasingSmoothingService
+from services.easing_smoothing.service import smooth_keyframes
 
 
 class EasingSmoothingServiceTests(unittest.TestCase):
@@ -62,3 +63,49 @@ class EasingSmoothingServiceTests(unittest.TestCase):
         self.assertGreater(payload["keyframes"][2]["x"], 0.0)
         self.assertLess(payload["keyframes"][2]["x"], 900.0)
         self.assertTrue(payload["keyframes"][2]["smoothed"])
+
+    def test_caps_dead_zone_for_small_crop_widths(self) -> None:
+        keyframes = [
+            {"frame_index": 0, "t": 0.0, "x": 161.08, "y": 0.0},
+            {"frame_index": 1, "t": 0.2, "x": 74.94, "y": 0.0},
+            {"frame_index": 2, "t": 0.4, "x": 74.94, "y": 0.0},
+            {"frame_index": 3, "t": 0.6, "x": 74.94, "y": 0.0},
+        ]
+
+        smoothed = smooth_keyframes(
+            keyframes=keyframes,
+            crop_width=202,
+            source_width=640,
+            smoothing_strength=0.82,
+            max_velocity_px_per_second=700.0,
+            max_acceleration_px_per_second2=1600.0,
+            dead_zone_px=80.0,
+            easing="easeInOutCubic",
+        )
+
+        self.assertLess(smoothed[1]["x"], 161.08)
+        self.assertLess(smoothed[2]["x"], smoothed[1]["x"])
+        self.assertLess(smoothed[3]["x"], smoothed[2]["x"])
+
+    def test_snaps_on_confirmed_subject_switch(self) -> None:
+        keyframes = [
+            {"frame_index": 0, "t": 9.8, "x": 232.79, "y": 0.0},
+            {"frame_index": 1, "t": 10.0, "x": 232.70, "y": 0.0},
+            {"frame_index": 2, "t": 10.2, "x": 232.33, "y": 0.0},
+            {"frame_index": 3, "t": 10.4, "x": 232.14, "y": 0.0},
+            {"frame_index": 4, "t": 10.6, "x": 332.19, "y": 0.0},
+            {"frame_index": 5, "t": 10.8, "x": 322.71, "y": 0.0},
+        ]
+
+        smoothed = smooth_keyframes(
+            keyframes=keyframes,
+            crop_width=202,
+            source_width=640,
+            smoothing_strength=0.82,
+            max_velocity_px_per_second=700.0,
+            max_acceleration_px_per_second2=1600.0,
+            dead_zone_px=80.0,
+            easing="easeInOutCubic",
+        )
+
+        self.assertEqual(smoothed[4]["x"], 332.19)

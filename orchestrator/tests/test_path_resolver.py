@@ -43,6 +43,7 @@ class PathResolverTests(unittest.TestCase):
             "reframe_plan_smooth": "jobs/job_001/artifacts/reframe_plan_smooth.json",
             "render_plan": "jobs/job_001/artifacts/render_plan.json",
             "final_9x16": "jobs/job_001/outputs/final_9x16.mp4",
+            "source_overlay": "jobs/job_001/outputs/source_overlay.mp4",
         }
         self.assertEqual(set(KNOWN_ARTIFACT_KEYS), set(expected))
         for artifact_key, object_key in expected.items():

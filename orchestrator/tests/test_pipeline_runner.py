@@ -12,8 +12,10 @@ from orchestrator.contracts import PIPELINE_STEP_IDS
 from orchestrator.object_store import FilesystemObjectStore
 from orchestrator.pipeline_runner import HttpPipelineRunner
 from orchestrator.service import OrchestratorService
+from orchestrator.path_resolver import artifact_path
 from services.body_detection.service import BodyDetectionService
 from services.body_detection.service import DetectionCandidate
+from services.body_detection.service import DetectionRunResult
 from services.common.runtime import build_context
 from services.common.runtime import RunMinIO
 from services.common.runtime import RunRequest
@@ -235,7 +237,12 @@ class HttpPipelineRunnerTests(unittest.TestCase):
             patch.object(
                 BodyDetectionService,
                 "_detect_proxy_frames",
-                return_value={0: DetectionCandidate(x=100.0, y=120.0, w=400.0, h=800.0, confidence=0.92)},
+                return_value=DetectionRunResult(
+                    detections_by_frame={0: DetectionCandidate(x=100.0, y=120.0, w=400.0, h=800.0, confidence=0.92)},
+                    detector_backend="yolo_ultralytics_cpu",
+                    track_source="yolo_person_detector",
+                    warnings=[],
+                ),
             ),
         ):
             created = service.create_job(
@@ -258,7 +265,7 @@ class HttpPipelineRunnerTests(unittest.TestCase):
         self.assertEqual(sampled_frames["proxy_resolution"], {"width": 960, "height": 540})
         self.assertEqual(sampled_frames["frames"][0], {"index": 0, "t": 0.0})
         self.assertEqual(raw_tracks["coordinate_space"], "source")
-        self.assertEqual(raw_tracks["detector_backend"], "hog_person_detector")
+        self.assertEqual(raw_tracks["detector_backend"], "yolo_ultralytics_cpu")
         self.assertEqual(len(raw_tracks["tracks"]), len(sampled_frames["frames"]))
         self.assertEqual(raw_tracks["tracks"][0]["center"], {"x": 300.0, "y": 520.0})
         self.assertEqual(interpolated_tracks["coordinate_space"], "source")
@@ -271,6 +278,63 @@ class HttpPipelineRunnerTests(unittest.TestCase):
         self.assertTrue(smooth_plan["keyframes"][0]["smoothed"])
         warning_codes = [warning["code"] for warning in result["service_status"]["warnings"]]
         self.assertIn("BODY_DETECTION_MISSING_FRAMES", warning_codes)
+
+    def test_get_job_status_reconciles_completed_ffmpeg_outputs(self) -> None:
+        service = OrchestratorService(self.store)
+
+        created = service.create_job(
+            source_bytes=b"video-bytes",
+            original_filename="clip.mp4",
+            job_id="job_reconcile_ffmpeg_success",
+        )
+        job_id = created["job_id"]
+
+        service.manifest_manager.set_step_state(
+            job_id,
+            "validation",
+            step_status="success",
+            started_at="2026-05-08T09:50:46Z",
+            finished_at="2026-05-08T09:50:46Z",
+            overall_status="running",
+            current_step="media_metadata",
+        )
+        for step_id in PIPELINE_STEP_IDS[1:-1]:
+            service.manifest_manager.set_step_state(
+                job_id,
+                step_id,
+                step_status="success",
+                started_at="2026-05-08T09:51:00Z",
+                finished_at="2026-05-08T09:51:01Z",
+                overall_status="running",
+                current_step="ffmpeg_renderer",
+            )
+        service.manifest_manager.set_step_state(
+            job_id,
+            "ffmpeg_renderer",
+            step_status="running",
+            started_at="2026-05-08T09:51:39Z",
+            overall_status="running",
+            current_step="ffmpeg_renderer",
+        )
+
+        self.store.upload_bytes(
+            artifact_path(job_id, "final_9x16"),
+            b"final-video",
+            content_type=ARTIFACT_CONTENT_TYPES["final_9x16"],
+        )
+        self.store.upload_bytes(
+            artifact_path(job_id, "source_overlay"),
+            b"overlay-video",
+            content_type=ARTIFACT_CONTENT_TYPES["source_overlay"],
+        )
+
+        result = service.get_job_status(job_id)
+
+        self.assertEqual(result["service_status"]["status"], "success")
+        self.assertIsNone(result["service_status"]["current_step"])
+        self.assertEqual(result["service_status"]["steps"]["ffmpeg_renderer"]["status"], "success")
+        self.assertIn("final_9x16", result["artifacts"])
+        self.assertIn("source_overlay", result["artifacts"])
 
     def _build_service_context(self, payload: dict[str, object]):
         request = RunRequest(

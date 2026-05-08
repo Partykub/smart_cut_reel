@@ -186,6 +186,25 @@
                             "type": "number",
                             "minimum": 0,
                             "maximum": 1
+                        },
+                        "model_path": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "device_preference": {
+                            "type": "string",
+                            "enum": [
+                                "gpu_first",
+                                "cpu"
+                            ]
+                        },
+                        "image_size": {
+                            "type": "integer",
+                            "minimum": 32
+                        },
+                        "person_class_id": {
+                            "type": "integer",
+                            "minimum": 0
                         }
                     }
                 },

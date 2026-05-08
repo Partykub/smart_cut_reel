@@ -91,7 +91,7 @@ class RenderPlanCompilerServiceTests(unittest.TestCase):
         self.assertEqual(payload["output"]["object_key"], "jobs/job_test/outputs/final_9x16.mp4")
         self.assertEqual(payload["metadata"]["fps"], 30.0)
         self.assertEqual(len(payload["crop_plan"]["keyframes"]), 2)
-        self.assertEqual(payload["render_mode"], "static_crop")
+        self.assertEqual(payload["render_mode"], "smooth_crop")
 
 
 if __name__ == "__main__":

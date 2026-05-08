@@ -1,20 +1,23 @@
 import type { JobStatusResponse } from "./types";
 
 async function unwrap<T>(response: Response): Promise<T> {
+  const rawBody = await response.text();
+
   if (!response.ok) {
-    let detail: string | undefined;
+    let detail = rawBody;
     try {
-      const body = (await response.json()) as { detail?: unknown };
+      const body = JSON.parse(rawBody) as { detail?: unknown };
       detail =
         typeof body?.detail === "string"
           ? body.detail
           : JSON.stringify(body);
     } catch {
-      detail = await response.text();
+      // Keep the raw response body when it is not valid JSON.
     }
     throw new Error(detail || `Request failed with ${response.status}`);
   }
-  return (await response.json()) as T;
+
+  return JSON.parse(rawBody) as T;
 }
 
 export async function createJob(formData: FormData): Promise<JobStatusResponse> {

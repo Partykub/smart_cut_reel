@@ -15,15 +15,33 @@ const POLL_INTERVAL_MS = 2000;
 export function JobDashboard({ jobId }: { jobId: string }) {
   const [data, setData] = useState<JobStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastSuccessfulRefreshAt, setLastSuccessfulRefreshAt] = useState<number | null>(null);
+  const [isTriggeringRun, setIsTriggeringRun] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const refreshInFlightRef = useRef(false);
 
   const refresh = useCallback(async () => {
+    if (refreshInFlightRef.current) {
+      return;
+    }
+
+    refreshInFlightRef.current = true;
+    setIsRefreshing(true);
+
     try {
       const next = await getJobStatus(jobId);
       setData(next);
       setError(null);
+      setLastSuccessfulRefreshAt(Date.now());
+      if (next.service_status.status === "running") {
+        setIsTriggeringRun(false);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      refreshInFlightRef.current = false;
+      setIsRefreshing(false);
     }
   }, [jobId]);
 
@@ -34,8 +52,9 @@ export function JobDashboard({ jobId }: { jobId: string }) {
   useEffect(() => {
     if (!data) return;
     const overall = data.service_status.status;
+    const shouldPoll = isTriggeringRun || !isTerminalStatus(overall);
 
-    if (isTerminalStatus(overall)) {
+    if (!shouldPoll) {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
@@ -55,7 +74,7 @@ export function JobDashboard({ jobId }: { jobId: string }) {
         intervalRef.current = null;
       }
     };
-  }, [data, refresh]);
+  }, [data, isTriggeringRun, refresh]);
 
   if (error && !data) {
     return (
@@ -85,6 +104,15 @@ export function JobDashboard({ jobId }: { jobId: string }) {
         <RunButton
           jobId={jobId}
           status={data.service_status.status}
+          onTriggerStart={() => {
+            setIsTriggeringRun(true);
+            setError(null);
+            void refresh();
+          }}
+          onRunError={(runError) => {
+            setIsTriggeringRun(false);
+            setError(runError.message);
+          }}
           onRan={refresh}
         />
       </header>
@@ -95,11 +123,36 @@ export function JobDashboard({ jobId }: { jobId: string }) {
         </p>
       ) : null}
 
-      <StatusBoard status={data.service_status} />
+      <StatusBoard
+        status={data.service_status}
+        isRefreshing={isRefreshing}
+        lastSuccessfulRefreshAt={lastSuccessfulRefreshAt}
+        refreshError={error}
+        isTriggeringRun={isTriggeringRun}
+      />
       {data.artifacts.final_9x16 ? (
-        <JobOutputPreview jobId={jobId} />
+        <JobOutputPreview
+          jobId={jobId}
+          artifactKey="final_9x16"
+          title="final_9x16.mp4"
+          downloadName={`${jobId}_final_9x16.mp4`}
+        />
       ) : null}
-      <ArtifactList artifacts={data.artifacts} paths={data.paths} />
+      {data.artifacts.source_overlay ? (
+        <JobOutputPreview
+          jobId={jobId}
+          artifactKey="source_overlay"
+          eyebrow="Debug Output"
+          title="source_overlay.mp4"
+          downloadName={`${jobId}_source_overlay.mp4`}
+          videoClassName="mx-auto max-h-[min(70vh,560px)] w-full max-w-3xl rounded-md bg-black"
+        />
+      ) : null}
+      <ArtifactList
+        artifacts={data.artifacts}
+        paths={data.paths}
+        serviceStatus={data.service_status}
+      />
     </div>
   );
 }

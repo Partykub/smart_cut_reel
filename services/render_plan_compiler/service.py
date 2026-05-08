@@ -67,7 +67,7 @@ class RenderPlanCompilerService:
         if fps <= 0 or duration <= 0:
             raise ValueError("metadata must include positive fps and duration")
 
-        render_mode = config.get("compiler_render_mode", "static_crop")
+        render_mode = config.get("compiler_render_mode", "smooth_crop")
         if render_mode not in {"static_crop", "smooth_crop"}:
             raise ValueError(f"Invalid compiler_render_mode '{render_mode}'")
 
@@ -108,7 +108,7 @@ class RenderPlanCompilerService:
         defaults: dict[str, Any] = {
             "crop_representation": "keyframe_list",
             "audio_policy": "copy_if_possible_else_aac",
-            "compiler_render_mode": "static_crop",
+            "compiler_render_mode": "smooth_crop",
         }
         defaults.update(context.request.config)
         crop_repr = defaults["crop_representation"]

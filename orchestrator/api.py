@@ -13,6 +13,7 @@ def create_app(service: OrchestratorService | None = None):
         from fastapi import Form
         from fastapi import HTTPException
         from fastapi import UploadFile
+        from fastapi.concurrency import run_in_threadpool
         from fastapi.responses import Response
     except ImportError as exc:
         raise RuntimeError(
@@ -30,7 +31,8 @@ def create_app(service: OrchestratorService | None = None):
         created_by: str = Form("debug_frontend"),
     ) -> dict:
         try:
-            return orchestrator_service.create_job(
+            return await run_in_threadpool(
+                orchestrator_service.create_job,
                 source_bytes=await source.read(),
                 original_filename=source.filename or "source.mp4",
                 content_type=source.content_type or "application/octet-stream",
@@ -42,7 +44,7 @@ def create_app(service: OrchestratorService | None = None):
     @app.get("/jobs/{job_id}/status")
     async def get_job_status(job_id: str) -> dict:
         try:
-            return orchestrator_service.get_job_status(job_id)
+            return await run_in_threadpool(orchestrator_service.get_job_status, job_id)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=f"Unknown job_id '{job_id}'.") from exc
         except ValueError as exc:
@@ -51,7 +53,7 @@ def create_app(service: OrchestratorService | None = None):
     @app.post("/jobs/{job_id}/run")
     async def run_job(job_id: str) -> dict:
         try:
-            return orchestrator_service.run_job(job_id)
+            return await run_in_threadpool(orchestrator_service.run_job, job_id)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=f"Unknown job_id '{job_id}'.") from exc
         except ValueError as exc:
@@ -60,7 +62,11 @@ def create_app(service: OrchestratorService | None = None):
     @app.get("/jobs/{job_id}/artifacts/{artifact_key}")
     async def get_job_artifact(job_id: str, artifact_key: str) -> Response:
         try:
-            data, media_type = orchestrator_service.read_artifact_bytes(job_id, artifact_key)
+            data, media_type = await run_in_threadpool(
+                orchestrator_service.read_artifact_bytes,
+                job_id,
+                artifact_key,
+            )
             return Response(content=data, media_type=media_type)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc

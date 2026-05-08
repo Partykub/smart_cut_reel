@@ -42,7 +42,7 @@ Phase 1 focuses on converting one 16:9 source video into a 9:16 vertical output 
 - `services/validation/`: validates source input, target output config, and basic media readability.
 - `services/media_metadata/`: probes source media with `ffprobe` and writes `metadata.json`.
 - `services/proxy_frame_sampling/`: creates `proxy.mp4` and `sampled_frames.json` from source media.
-- `services/body_detection/`: runs an OpenCV HOG-based person detector on proxy frames and falls back to centered tracks when detections are missing.
+- `services/body_detection/`: runs YOLO person detection on proxy frames with GPU-first inference and CPU fallback, then falls back to centered tracks when detections are missing.
 - `services/track_interpolation/`: fills short gaps, applies hold/center fallback, and suppresses large outlier jumps.
 - `services/reframe_planning/`: converts interpolated tracks into clamped 9:16 crop keyframes.
 - `services/easing_smoothing/`: smooths raw reframe keyframes with easing, dead-zone handling, and bounded motion.
@@ -73,9 +73,12 @@ export ORCHESTRATOR_SERVICE_ENDPOINTS='{
 	"ffmpeg_renderer": "http://ffmpeg-renderer:8000"
 }'
 export ORCHESTRATOR_MINIO_BUCKET='smart-cut'
+export BODY_DETECTION_YOLO_MODEL='yolov8m.pt'
 ```
 
 If `ORCHESTRATOR_SERVICE_ENDPOINTS` is not set, the API keeps using `MockPipelineRunner` so local development still works before every downstream service exists.
+
+`services/body_detection/` now expects Ultralytics YOLO weights. By default it uses `yolov8m.pt`, prefers CUDA when available, and falls back to CPU automatically. Set `BODY_DETECTION_YOLO_MODEL` or `job_manifest.service_config.body_detection.model_path` to a local weights path if you do not want runtime downloads.
 
 ### Run the full HTTP pipeline locally (real `final_9x16.mp4`)
 

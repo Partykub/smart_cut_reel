@@ -24,6 +24,7 @@ _ARTIFACT_OBJECT_SUFFIXES = {
     "reframe_plan_smooth": "artifacts/reframe_plan_smooth.json",
     "render_plan": "artifacts/render_plan.json",
     "final_9x16": "outputs/final_9x16.mp4",
+    "source_overlay": "outputs/source_overlay.mp4",
 }
 
 KNOWN_ARTIFACT_KEYS = tuple(_ARTIFACT_OBJECT_SUFFIXES)

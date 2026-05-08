@@ -1,6 +1,11 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+
 import {
   STEP_ORDER,
   type ServiceStatus,
+  type StepName,
   type StepStatus,
 } from "@/lib/types";
 
@@ -11,7 +16,68 @@ const STATUS_BADGE: Record<StepStatus, string> = {
   failed: "border-red-800 bg-red-950/60 text-red-200",
 };
 
-export function StatusBoard({ status }: { status: ServiceStatus }) {
+const STEP_LABEL: Record<StepName, string> = {
+  validation: "Validate input",
+  media_metadata: "Inspect media",
+  proxy_frame_sampling: "Sample frames",
+  body_detection: "Detect people",
+  track_interpolation: "Stabilize tracks",
+  reframe_planning: "Plan reframes",
+  easing_smoothing: "Smooth motion",
+  render_plan_compiler: "Compile render plan",
+  ffmpeg_renderer: "Render outputs",
+};
+
+const HEARTBEAT_STALE_MS = 15_000;
+
+export function StatusBoard({
+  status,
+  isRefreshing,
+  lastSuccessfulRefreshAt,
+  refreshError,
+  isTriggeringRun,
+}: {
+  status: ServiceStatus;
+  isRefreshing: boolean;
+  lastSuccessfulRefreshAt: number | null;
+  refreshError: string | null;
+  isTriggeringRun: boolean;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (status.status !== "running") {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [status.status]);
+
+  const completedCount = useMemo(
+    () => STEP_ORDER.filter((step) => status.steps[step].status === "success").length,
+    [status.steps],
+  );
+  const failedCount = useMemo(
+    () => STEP_ORDER.filter((step) => status.steps[step].status === "failed").length,
+    [status.steps],
+  );
+  const pendingCount = STEP_ORDER.length - completedCount - failedCount - (status.current_step ? 1 : 0);
+
+  const runningStep = status.current_step ? status.steps[status.current_step] : null;
+  const currentStep = status.current_step;
+  const lastUpdateAgeMs = Math.max(0, now - parseTimestamp(status.updated_at));
+  const isHeartbeatStale = status.status === "running" && lastUpdateAgeMs > HEARTBEAT_STALE_MS;
+  const lastSuccessfulRefreshAgeMs = lastSuccessfulRefreshAt
+    ? Math.max(0, now - lastSuccessfulRefreshAt)
+    : null;
+  const hasLiveRunningStep = status.status === "running" && status.current_step && runningStep;
+
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -24,17 +90,132 @@ export function StatusBoard({ status }: { status: ServiceStatus }) {
           {status.status}
         </span>
         {status.current_step ? (
-          <span className="text-xs text-zinc-500">
-            current:{" "}
-            <span className="font-mono text-zinc-300">
-              {status.current_step}
+          <span className="inline-flex items-center gap-2 rounded-full border border-sky-900/60 bg-sky-950/40 px-2.5 py-1 text-xs text-sky-100">
+            <span className="relative flex size-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75" />
+              <span className="relative inline-flex size-2 rounded-full bg-sky-300" />
             </span>
+            Active: {STEP_LABEL[status.current_step]}
           </span>
         ) : null}
-        <span className="text-xs text-zinc-600">
-          updated {formatTime(status.updated_at)}
+        <span className="text-xs text-zinc-500">
+          {completedCount}/{STEP_ORDER.length} complete
+        </span>
+        <span
+          className={`inline-flex items-center rounded-full border px-2 py-1 text-xs ${isHeartbeatStale
+            ? "border-amber-800 bg-amber-950/50 text-amber-200"
+            : "border-zinc-800 bg-zinc-900 text-zinc-400"
+            }`}
+        >
+          {isHeartbeatStale
+            ? `No update for ${formatDuration(lastUpdateAgeMs)}`
+            : `Updated ${formatRelativeTime(lastUpdateAgeMs)} ago`}
         </span>
       </div>
+
+      <div className="grid gap-3 md:grid-cols-4">
+        <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4">
+          <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Completed</p>
+          <p className="mt-2 font-mono text-2xl text-zinc-50">
+            {completedCount}
+            <span className="ml-2 text-sm text-zinc-500">/ {STEP_ORDER.length}</span>
+          </p>
+          <p className="mt-1 text-xs text-zinc-500">{pendingCount} pending, {failedCount} failed</p>
+        </div>
+        <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4">
+          <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Live Sync</p>
+          <p className="mt-2 flex items-center gap-2 text-sm text-zinc-100">
+            <span
+              className={`size-2 rounded-full ${refreshError
+                ? "bg-amber-300"
+                : isRefreshing
+                  ? "animate-pulse bg-sky-300"
+                  : "bg-emerald-300"
+                }`}
+            />
+            {refreshError
+              ? "showing cached status"
+              : isRefreshing
+                ? "refreshing now"
+                : "connected"}
+          </p>
+          <p className="mt-1 text-xs text-zinc-500">
+            {lastSuccessfulRefreshAgeMs === null
+              ? "waiting for first refresh"
+              : `last success ${formatRelativeTime(lastSuccessfulRefreshAgeMs)} ago`}
+          </p>
+        </div>
+        <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 md:col-span-2">
+          <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Current Activity</p>
+          <p className="mt-2 text-sm text-zinc-100">
+            {hasLiveRunningStep && currentStep
+              ? STEP_LABEL[currentStep]
+              : isTriggeringRun
+                ? "Trigger sent, waiting for pipeline to enter running state"
+                : status.status === "success"
+                  ? "Pipeline completed"
+                  : status.status === "failed"
+                    ? "Pipeline failed"
+                    : "Waiting to start"}
+          </p>
+          <p className="mt-1 text-xs text-zinc-500">
+            {hasLiveRunningStep
+              ? `frontend polls every 2s, backend heartbeat ${formatRelativeTime(lastUpdateAgeMs)} ago`
+              : refreshError
+                ? `latest refresh error: ${refreshError}`
+                : "step updates appear here as soon as the orchestrator advances"}
+          </p>
+        </div>
+      </div>
+
+      {hasLiveRunningStep && currentStep ? (
+        <div className="rounded-xl border border-sky-900/50 bg-gradient-to-r from-sky-950/70 via-zinc-950 to-zinc-950 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-sky-300/80">
+                In Progress
+              </p>
+              <p className="mt-1 text-base font-medium text-sky-50">
+                {STEP_LABEL[currentStep]}
+              </p>
+              <p className="mt-1 text-sm text-zinc-400">
+                Step <span className="font-mono text-zinc-200">{currentStep}</span>
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
+                Running Time
+              </p>
+              <p className="mt-1 font-mono text-2xl text-zinc-50">
+                {formatDuration(now - parseTimestamp(runningStep.started_at))}
+              </p>
+              {runningStep.started_at ? (
+                <p className="mt-1 text-xs text-zinc-500">
+                  started {formatTime(runningStep.started_at)}
+                </p>
+              ) : null}
+            </div>
+          </div>
+          <div className="mt-4 h-2 overflow-hidden rounded-full bg-zinc-900">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-sky-400 via-cyan-300 to-sky-500 transition-[width] duration-500"
+              style={{ width: `${(completedCount / STEP_ORDER.length) * 100}%` }}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {isTriggeringRun && status.status !== "running" ? (
+        <div className="rounded-xl border border-cyan-900/50 bg-cyan-950/30 p-4 text-sm text-cyan-100">
+          <div className="flex items-center gap-3">
+            <span className="relative flex size-3">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-75" />
+              <span className="relative inline-flex size-3 rounded-full bg-cyan-200" />
+            </span>
+            Pipeline trigger sent. Waiting for the orchestrator to mark the first step as running.
+          </div>
+        </div>
+      ) : null}
 
       <ol className="space-y-2">
         {STEP_ORDER.map((step, index) => {
@@ -43,20 +224,28 @@ export function StatusBoard({ status }: { status: ServiceStatus }) {
           return (
             <li
               key={step}
-              className={`flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2 ${STATUS_BADGE[state.status]} ${
-                isCurrent ? "ring-1 ring-sky-500/50" : ""
-              }`}
+              className={`flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2 ${STATUS_BADGE[state.status]} ${isCurrent ? "ring-1 ring-sky-500/50" : ""
+                }`}
             >
               <div className="flex items-center gap-3">
                 <span className="font-mono text-xs text-zinc-500">
                   {String(index + 1).padStart(2, "0")}
                 </span>
-                <span className="font-mono text-sm">{step}</span>
+                <div>
+                  <p className="font-mono text-sm">{step}</p>
+                  <p className="text-xs text-zinc-500">{STEP_LABEL[step]}</p>
+                </div>
               </div>
               <div className="flex flex-wrap items-center gap-3 text-xs">
                 <span className="font-medium uppercase tracking-wider">
                   {state.status}
                 </span>
+                {isCurrent ? (
+                  <span className="inline-flex items-center gap-2 rounded-full border border-sky-800/70 bg-sky-900/30 px-2 py-1 text-sky-100">
+                    <span className="size-2 animate-pulse rounded-full bg-sky-300" />
+                    working now
+                  </span>
+                ) : null}
                 {state.started_at ? (
                   <span className="text-zinc-500">
                     start {formatTime(state.started_at)}
@@ -65,6 +254,13 @@ export function StatusBoard({ status }: { status: ServiceStatus }) {
                 {state.finished_at ? (
                   <span className="text-zinc-500">
                     end {formatTime(state.finished_at)}
+                  </span>
+                ) : null}
+                {state.started_at ? (
+                  <span className="text-zinc-500">
+                    {state.finished_at
+                      ? `took ${formatDuration(parseTimestamp(state.finished_at) - parseTimestamp(state.started_at))}`
+                      : `elapsed ${formatDuration(now - parseTimestamp(state.started_at))}`}
                   </span>
                 ) : null}
               </div>
@@ -112,4 +308,34 @@ function formatTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleTimeString();
+}
+
+function parseTimestamp(value: string | null): number {
+  if (!value) return Date.now();
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? Date.now() : timestamp;
+}
+
+function formatDuration(valueMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(valueMs / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+  }
+
+  return `${seconds}s`;
+}
+
+function formatRelativeTime(valueMs: number): string {
+  if (valueMs < 1000) return "just now";
+  if (valueMs < 60_000) return `${Math.floor(valueMs / 1000)}s`;
+  if (valueMs < 3_600_000) return `${Math.floor(valueMs / 60_000)}m`;
+  return `${Math.floor(valueMs / 3_600_000)}h`;
 }

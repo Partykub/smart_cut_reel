@@ -8,3 +8,6 @@ venv/
 .pytest_cache/
 
 .orchestrator-data/
+.run/
+yolov8m.pt
+videoplayback-300s.mp4

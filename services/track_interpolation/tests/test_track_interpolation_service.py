@@ -93,3 +93,50 @@ class TrackInterpolationServiceTests(unittest.TestCase):
         self.assertEqual(payload["tracks"][2]["center"], {"x": 300.0, "y": 520.0})
         warning_codes = [warning.code for warning in response.warnings]
         self.assertIn("TRACK_INTERPOLATION_OUTLIERS_ADJUSTED", warning_codes)
+
+    def test_keeps_sustained_jump_when_next_frame_confirms_transition(self) -> None:
+        self.store.upload_json(
+            "jobs/job_test/artifacts/body_tracks_raw.json",
+            {
+                "coordinate_space": "source",
+                "source_resolution": {"width": 640, "height": 360},
+                "tracks": [
+                    {
+                        "frame_index": 0,
+                        "t": 0.0,
+                        "bbox": {"x": 80.0, "y": 60.0, "w": 120.0, "h": 200.0},
+                        "center": {"x": 140.0, "y": 160.0},
+                        "confidence": 0.95,
+                        "missing": False,
+                        "source": "yolo_person_detector",
+                    },
+                    {
+                        "frame_index": 1,
+                        "t": 0.2,
+                        "bbox": {"x": 330.0, "y": 60.0, "w": 120.0, "h": 200.0},
+                        "center": {"x": 390.0, "y": 160.0},
+                        "confidence": 0.94,
+                        "missing": False,
+                        "source": "yolo_person_detector",
+                    },
+                    {
+                        "frame_index": 2,
+                        "t": 0.4,
+                        "bbox": {"x": 340.0, "y": 60.0, "w": 120.0, "h": 200.0},
+                        "center": {"x": 400.0, "y": 160.0},
+                        "confidence": 0.94,
+                        "missing": False,
+                        "source": "yolo_person_detector",
+                    },
+                ],
+            },
+        )
+        self.request.config = {"max_center_jump_per_second": 600.0}
+
+        response = self.service.run(build_context(self.request, self.store))
+        payload = self.store.download_json(self.request.expected_outputs["body_tracks_interpolated"])
+
+        self.assertEqual(payload["tracks"][1]["center"], {"x": 390.0, "y": 160.0})
+        self.assertEqual(payload["tracks"][1].get("source"), "yolo_person_detector")
+        warning_codes = [warning.code for warning in response.warnings]
+        self.assertNotIn("TRACK_INTERPOLATION_OUTLIERS_ADJUSTED", warning_codes)

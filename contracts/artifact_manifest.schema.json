@@ -54,6 +54,9 @@
                 },
                 "final_9x16": {
                     "$ref": "#/$defs/finalOutputArtifact"
+                },
+                "source_overlay": {
+                    "$ref": "#/$defs/sourceOverlayArtifact"
                 }
             }
         }
@@ -262,6 +265,26 @@
                     "properties": {
                         "object_key": {
                             "pattern": "^jobs/[^/]+/outputs/final_9x16\\.mp4$"
+                        },
+                        "produced_by": {
+                            "const": "ffmpeg_renderer"
+                        },
+                        "content_type": {
+                            "const": "video/mp4"
+                        }
+                    }
+                }
+            ]
+        },
+        "sourceOverlayArtifact": {
+            "allOf": [
+                {
+                    "$ref": "#/$defs/baseArtifact"
+                },
+                {
+                    "properties": {
+                        "object_key": {
+                            "pattern": "^jobs/[^/]+/outputs/source_overlay\\.mp4$"
                         },
                         "produced_by": {
                             "const": "ffmpeg_renderer"

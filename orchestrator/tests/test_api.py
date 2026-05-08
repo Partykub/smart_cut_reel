@@ -1,16 +1,42 @@
 from pathlib import Path
+import threading
 import tempfile
+import time
 import unittest
 
 from orchestrator.api import create_app
 from orchestrator.object_store import FilesystemObjectStore
+from orchestrator.pipeline_runner import MockPipelineRunner
 from orchestrator.service import OrchestratorService
+
+
+class BlockingRunner:
+    def __init__(self) -> None:
+        self.started = threading.Event()
+        self.release = threading.Event()
+
+    def run(self, *, job_id: str, manifest_manager, artifact_helper) -> dict:
+        del artifact_helper
+        manifest_manager.set_step_state(
+            job_id,
+            "validation",
+            step_status="running",
+            started_at="2026-05-08T00:00:00Z",
+            overall_status="running",
+            current_step="validation",
+        )
+        self.started.set()
+        self.release.wait(timeout=5)
+        return manifest_manager.read_service_status(job_id)
 
 
 class OrchestratorApiTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.service = OrchestratorService(FilesystemObjectStore(Path(self.temp_dir.name)))
+        self.service = OrchestratorService(
+            FilesystemObjectStore(Path(self.temp_dir.name)),
+            runner=MockPipelineRunner(),
+        )
 
         from fastapi.testclient import TestClient
 
@@ -94,3 +120,40 @@ class OrchestratorApiTests(unittest.TestCase):
         response = self.client.get(f"/jobs/{created['job_id']}/artifacts/final_9x16")
 
         self.assertEqual(response.status_code, 404)
+
+    def test_status_endpoint_stays_available_while_run_is_executing(self) -> None:
+        runner = BlockingRunner()
+        service = OrchestratorService(
+            FilesystemObjectStore(Path(self.temp_dir.name)),
+            runner=runner,
+        )
+
+        from fastapi.testclient import TestClient
+
+        client = TestClient(create_app(service))
+        created = client.post(
+            "/jobs",
+            files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
+            data={"created_by": "debug_frontend"},
+        ).json()
+
+        run_response = {}
+
+        def call_run() -> None:
+            run_response["response"] = client.post(f"/jobs/{created['job_id']}/run")
+
+        thread = threading.Thread(target=call_run)
+        thread.start()
+
+        self.assertTrue(runner.started.wait(timeout=2))
+
+        status_response = client.get(f"/jobs/{created['job_id']}/status")
+
+        self.assertEqual(status_response.status_code, 200)
+        self.assertEqual(status_response.json()["service_status"]["status"], "running")
+        self.assertEqual(status_response.json()["service_status"]["current_step"], "validation")
+
+        runner.release.set()
+        thread.join(timeout=2)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(run_response["response"].status_code, 200)
