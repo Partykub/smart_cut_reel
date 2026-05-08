@@ -1,0 +1,330 @@
+"""Render final 9:16 MP4 from render_plan.json using FFmpeg."""
+
+from __future__ import annotations
+
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+from typing import Any
+
+from services.common.media import probe_video_bytes
+from services.common.runtime import RunResponse
+from services.common.runtime import ServiceContext
+
+
+def _even_dimension(value: int) -> int:
+    return max(2, (max(0, value) // 2) * 2)
+
+
+def _has_audio_stream(probe: dict[str, Any]) -> bool:
+    streams = probe.get("streams", [])
+    if not isinstance(streams, list):
+        return False
+    return any(isinstance(s, dict) and s.get("codec_type") == "audio" for s in streams)
+
+
+class FFmpegRendererService:
+    service_id = "ffmpeg_renderer"
+
+    def run(self, context: ServiceContext) -> RunResponse:
+        artifact_manifest = self._artifact_manifest(context)
+        render_entry = artifact_manifest.get("artifacts", {}).get("render_plan", {})
+        plan_key = render_entry.get("object_key") if isinstance(render_entry, dict) else None
+        if not isinstance(plan_key, str) or not context.exists(plan_key):
+            raise ValueError("artifact_manifest is missing render_plan for ffmpeg_renderer")
+
+        plan = context.read_json(plan_key)
+        source_key = plan.get("source_video", {}).get("object_key")
+        if not isinstance(source_key, str) or not context.exists(source_key):
+            raise ValueError("render_plan is missing valid source_video.object_key")
+
+        source_bytes = context.read_bytes(source_key)
+        target = plan.get("target_resolution") or {}
+        target_w = int(target.get("width") or 0)
+        target_h = int(target.get("height") or 0)
+        if target_w <= 0 or target_h <= 0:
+            raise ValueError("render_plan must include positive target_resolution")
+
+        crop_plan = plan.get("crop_plan") or {}
+        crop_w = int(crop_plan.get("crop_width") or 0)
+        crop_h = int(crop_plan.get("crop_height") or 0)
+        keyframes = crop_plan.get("keyframes") or []
+        if crop_w <= 0 or crop_h <= 0:
+            raise ValueError("render_plan crop_plan must include crop dimensions")
+        if not isinstance(keyframes, list) or not keyframes:
+            raise ValueError("render_plan crop_plan must include keyframes")
+
+        render_mode = str(plan.get("render_mode") or "static_crop")
+        ffmpeg_config = self._ffmpeg_config(context)
+
+        crop_w_e = _even_dimension(crop_w)
+        crop_h_e = _even_dimension(crop_h)
+        tw = _even_dimension(target_w)
+        th = _even_dimension(target_h)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            src_path = Path(tmp) / "source.mp4"
+            out_path = Path(tmp) / "out.mp4"
+            src_path.write_bytes(source_bytes)
+
+            if render_mode == "smooth_crop":
+                self._render_smooth_segments(
+                    src_path=src_path,
+                    out_path=out_path,
+                    plan=plan,
+                    crop_w_e=crop_w_e,
+                    crop_h_e=crop_h_e,
+                    target_w=tw,
+                    target_h=th,
+                    ffmpeg_config=ffmpeg_config,
+                )
+            else:
+                self._render_static_crop(
+                    src_path=src_path,
+                    out_path=out_path,
+                    keyframes=keyframes,
+                    crop_w_e=crop_w_e,
+                    crop_h_e=crop_h_e,
+                    target_w=tw,
+                    target_h=th,
+                    ffmpeg_config=ffmpeg_config,
+                    source_bytes=source_bytes,
+                    audio_policy=str(plan.get("audio_policy") or "copy_if_possible_else_aac"),
+                )
+
+            output_bytes = out_path.read_bytes()
+
+        out_key = context.expected_output_key("final_9x16")
+        context.write_bytes(out_key, output_bytes, content_type="video/mp4")
+        return RunResponse(service_id=self.service_id, outputs={"final_9x16": out_key})
+
+    def _ffmpeg_config(self, context: ServiceContext) -> dict[str, Any]:
+        defaults = {
+            "video_codec": "libx264",
+            "audio_codec": "aac",
+        }
+        defaults.update(context.request.config)
+        return defaults
+
+    def _artifact_manifest(self, context: ServiceContext) -> dict[str, Any]:
+        key = context.request.inputs.get("artifact_manifest")
+        if not key or not context.exists(key):
+            raise ValueError("request is missing artifact_manifest for ffmpeg_renderer")
+        return context.read_json(key)
+
+    def _render_static_crop(
+        self,
+        *,
+        src_path: Path,
+        out_path: Path,
+        keyframes: list[dict[str, Any]],
+        crop_w_e: int,
+        crop_h_e: int,
+        target_w: int,
+        target_h: int,
+        ffmpeg_config: dict[str, Any],
+        source_bytes: bytes,
+        audio_policy: str,
+    ) -> None:
+        first = keyframes[0]
+        cx = int(round(float(first.get("x") or 0.0)))
+        cy = int(round(float(first.get("y") or 0.0)))
+        cx = max(0, cx)
+        cy = max(0, cy)
+
+        probe = probe_video_bytes(source_bytes)
+        video_codec = str(ffmpeg_config.get("video_codec") or "libx264")
+        audio_codec = str(ffmpeg_config.get("audio_codec") or "aac")
+
+        vf = f"crop={crop_w_e}:{crop_h_e}:{cx}:{cy},scale={target_w}:{target_h}"
+
+        cmd: list[str] = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(src_path),
+            "-vf",
+            vf,
+            "-c:v",
+            video_codec,
+            "-preset",
+            "fast",
+            "-crf",
+            "23",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+        ]
+
+        if _has_audio_stream(probe):
+            if audio_policy == "aac_transcode":
+                cmd.extend(["-c:a", audio_codec, "-b:a", "192k"])
+            else:
+                cmd.extend(["-c:a", "copy"])
+        else:
+            cmd.append("-an")
+
+        cmd.append(str(out_path))
+        self._run_ffmpeg(cmd)
+
+    def _render_smooth_segments(
+        self,
+        *,
+        src_path: Path,
+        out_path: Path,
+        plan: dict[str, Any],
+        crop_w_e: int,
+        crop_h_e: int,
+        target_w: int,
+        target_h: int,
+        ffmpeg_config: dict[str, Any],
+    ) -> None:
+        crop_plan = plan.get("crop_plan") or {}
+        keyframes = crop_plan.get("keyframes") or []
+        meta = plan.get("metadata") or {}
+        duration = float(meta.get("duration") or 0.0)
+        if duration <= 0:
+            raise ValueError("smooth_crop requires metadata.duration")
+
+        video_codec = str(ffmpeg_config.get("video_codec") or "libx264")
+        audio_codec = str(ffmpeg_config.get("audio_codec") or "aac")
+        audio_policy = str(plan.get("audio_policy") or "copy_if_possible_else_aac")
+
+        sorted_kf: list[dict[str, Any]] = sorted(
+            keyframes,
+            key=lambda k: float(k.get("t") or 0.0),
+        )
+
+        temp_root = out_path.parent
+        segment_paths: list[Path] = []
+        concat_list = temp_root / "concat.txt"
+
+        for index in range(len(sorted_kf)):
+            seg_out = temp_root / f"seg_{index:04d}.mp4"
+            t_start = float(sorted_kf[index].get("t") or 0.0)
+            if index + 1 < len(sorted_kf):
+                t_end = float(sorted_kf[index + 1].get("t") or duration)
+            else:
+                t_end = duration
+            seg_duration = max(0.001, t_end - t_start)
+
+            cx = int(round(float(sorted_kf[index].get("x") or 0.0)))
+            cy = int(round(float(sorted_kf[index].get("y") or 0.0)))
+            cx = max(0, cx)
+            cy = max(0, cy)
+
+            vf = f"crop={crop_w_e}:{crop_h_e}:{cx}:{cy},scale={target_w}:{target_h}"
+
+            cmd = [
+                "ffmpeg",
+                "-y",
+                "-ss",
+                f"{t_start:.6f}",
+                "-i",
+                str(src_path),
+                "-t",
+                f"{seg_duration:.6f}",
+                "-vf",
+                vf,
+                "-c:v",
+                video_codec,
+                "-preset",
+                "fast",
+                "-crf",
+                "23",
+                "-pix_fmt",
+                "yuv420p",
+                "-an",
+                str(seg_out),
+            ]
+            self._run_ffmpeg(cmd)
+            segment_paths.append(seg_out)
+
+        if not segment_paths:
+            raise ValueError("smooth_crop produced no segments")
+
+        if len(segment_paths) == 1:
+            shutil.move(segment_paths[0], out_path)
+            self._mux_audio_if_needed(
+                src_path=src_path,
+                video_path=out_path,
+                audio_policy=audio_policy,
+                audio_codec=audio_codec,
+                probe=probe_video_bytes(src_path.read_bytes()),
+            )
+            return
+
+        concat_list.write_text(
+            "".join(f"file '{p.as_posix()}'\n" for p in segment_paths),
+            encoding="utf-8",
+        )
+        concat_out = temp_root / "concat_noaudio.mp4"
+        concat_cmd = [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(concat_list),
+            "-c",
+            "copy",
+            str(concat_out),
+        ]
+        self._run_ffmpeg(concat_cmd)
+        shutil.move(concat_out, out_path)
+
+        self._mux_audio_if_needed(
+            src_path=src_path,
+            video_path=out_path,
+            audio_policy=audio_policy,
+            audio_codec=audio_codec,
+            probe=probe_video_bytes(src_path.read_bytes()),
+        )
+
+    def _mux_audio_if_needed(
+        self,
+        *,
+        src_path: Path,
+        video_path: Path,
+        audio_policy: str,
+        audio_codec: str,
+        probe: dict[str, Any],
+    ) -> None:
+        if not _has_audio_stream(probe):
+            return
+
+        tmp_audio_out = video_path.with_suffix(".muxed.mp4")
+        if audio_policy == "aac_transcode":
+            audio_args = ["-c:a", audio_codec, "-b:a", "192k"]
+        else:
+            audio_args = ["-c:a", "copy"]
+
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(video_path),
+            "-i",
+            str(src_path),
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-shortest",
+            "-c:v",
+            "copy",
+            *audio_args,
+            str(tmp_audio_out),
+        ]
+        self._run_ffmpeg(cmd)
+        shutil.move(tmp_audio_out, video_path)
+
+    def _run_ffmpeg(self, cmd: list[str]) -> None:
+        completed = subprocess.run(cmd, check=False, capture_output=True, text=True)
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or completed.stdout.strip() or "ffmpeg failed"
+            raise ValueError(detail)

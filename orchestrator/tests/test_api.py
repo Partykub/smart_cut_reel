@@ -65,3 +65,32 @@ class OrchestratorApiTests(unittest.TestCase):
         response = self.client.get("/jobs/job_missing/status")
 
         self.assertEqual(response.status_code, 404)
+
+    def test_get_artifact_returns_bytes_when_registered(self) -> None:
+        created = self.client.post(
+            "/jobs",
+            files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
+            data={"created_by": "debug_frontend"},
+        ).json()
+        job_id = created["job_id"]
+        out_key = f"jobs/{job_id}/outputs/final_9x16.mp4"
+        payload = b"\x00\x00\x00\x20ftypmp42"
+        self.service.store.upload_bytes(out_key, payload, content_type="video/mp4")
+        self.service.manifest_manager.register_artifact(job_id, "final_9x16")
+
+        response = self.client.get(f"/jobs/{job_id}/artifacts/final_9x16")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, payload)
+        self.assertIn("video", response.headers.get("content-type", ""))
+
+    def test_get_artifact_not_found_when_missing(self) -> None:
+        created = self.client.post(
+            "/jobs",
+            files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
+            data={"created_by": "debug_frontend"},
+        ).json()
+
+        response = self.client.get(f"/jobs/{created['job_id']}/artifacts/final_9x16")
+
+        self.assertEqual(response.status_code, 404)

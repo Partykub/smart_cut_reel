@@ -13,6 +13,7 @@ def create_app(service: OrchestratorService | None = None):
         from fastapi import Form
         from fastapi import HTTPException
         from fastapi import UploadFile
+        from fastapi.responses import Response
     except ImportError as exc:
         raise RuntimeError(
             "FastAPI runtime dependencies are missing. Install requirements.txt before using orchestrator.api."
@@ -53,6 +54,18 @@ def create_app(service: OrchestratorService | None = None):
             return orchestrator_service.run_job(job_id)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=f"Unknown job_id '{job_id}'.") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/jobs/{job_id}/artifacts/{artifact_key}")
+    async def get_job_artifact(job_id: str, artifact_key: str) -> Response:
+        try:
+            data, media_type = orchestrator_service.read_artifact_bytes(job_id, artifact_key)
+            return Response(content=data, media_type=media_type)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except KeyError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

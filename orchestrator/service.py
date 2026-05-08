@@ -14,10 +14,12 @@ from .contracts import repo_root
 from .manifest_manager import ManifestManager
 from .manifest_manager import utc_now
 from .object_store import ObjectStore
+from .contracts import ARTIFACT_CONTENT_TYPES
 from .path_resolver import input_path
 from .path_resolver import job_prefix
 from .path_resolver import manifest_path
 from .path_resolver import output_path
+from .path_resolver import validate_artifact_key
 from .path_resolver import validate_job_id
 from .pipeline_runner import HttpPipelineRunner
 from .pipeline_runner import MockPipelineRunner
@@ -88,6 +90,23 @@ class OrchestratorService:
                 "output": output_path(resolved_job_id),
             },
         }
+
+    def read_artifact_bytes(self, job_id: str, artifact_key: str) -> tuple[bytes, str]:
+        """Return artifact bytes and Content-Type for a registered artifact."""
+        resolved_job_id = validate_job_id(job_id)
+        artifact_key = validate_artifact_key(artifact_key)
+        manifest = self.manifest_manager.read_artifact_manifest(resolved_job_id)
+        artifacts = manifest.get("artifacts", {})
+        meta = artifacts.get(artifact_key)
+        if not isinstance(meta, dict):
+            raise FileNotFoundError(f"Artifact '{artifact_key}' is not registered for job '{resolved_job_id}'.")
+        object_key = meta.get("object_key")
+        if not isinstance(object_key, str):
+            raise FileNotFoundError(f"Artifact '{artifact_key}' has no object_key.")
+        if not self.store.exists(object_key):
+            raise FileNotFoundError(f"Object '{object_key}' does not exist in storage.")
+        content_type = ARTIFACT_CONTENT_TYPES.get(artifact_key, "application/octet-stream")
+        return self.store.download_bytes(object_key), content_type
 
     def run_job(self, job_id: str) -> dict[str, Any]:
         resolved_job_id = validate_job_id(job_id)

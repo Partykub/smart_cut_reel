@@ -9,6 +9,7 @@ Phase 1 focuses on converting one 16:9 source video into a 9:16 vertical output 
 - P1-A03 completed: the Orchestrator now exposes Python service logic plus FastAPI endpoints for create job, get status, and run job.
 - P1-A04 completed: `run_job` now supports real sequential `/run` orchestration with per-step failure handling when service endpoints are configured, and otherwise falls back to the mock runner for local development.
 - P1-C01 through P1-G03 now have baseline implementations for the early pipeline: validation, media metadata, proxy sampling, detector-backed body detection with fallback, track interpolation, reframe planning, and easing/smoothing.
+- P1-H01–P1-H03 and P1-B03 have baseline implementations: `services/render_plan_compiler/` emits `render_plan.json`; `services/ffmpeg_renderer/` renders static or segmented smooth crop to `final_9x16.mp4`; the orchestrator exposes `GET /jobs/{job_id}/artifacts/{artifact_key}` and the debug frontend can preview/download via `/api/jobs/[jobId]/output`.
 
 ## Source Of Truth
 
@@ -45,6 +46,8 @@ Phase 1 focuses on converting one 16:9 source video into a 9:16 vertical output 
 - `services/track_interpolation/`: fills short gaps, applies hold/center fallback, and suppresses large outlier jumps.
 - `services/reframe_planning/`: converts interpolated tracks into clamped 9:16 crop keyframes.
 - `services/easing_smoothing/`: smooths raw reframe keyframes with easing, dead-zone handling, and bounded motion.
+- `services/render_plan_compiler/`: builds `artifacts/render_plan.json` from metadata + `reframe_plan_smooth.json` (supports `compiler_render_mode` `static_crop` or `smooth_crop` in `job_manifest.service_config.render_plan_compiler`).
+- `services/ffmpeg_renderer/`: renders `outputs/final_9x16.mp4` via FFmpeg (`static_crop` uses the first keyframe; `smooth_crop` slices segments between keyframes, concatenates, then muxes audio).
 
 ## Local Setup
 
@@ -74,6 +77,35 @@ export ORCHESTRATOR_MINIO_BUCKET='smart-cut'
 
 If `ORCHESTRATOR_SERVICE_ENDPOINTS` is not set, the API keeps using `MockPipelineRunner` so local development still works before every downstream service exists.
 
+### Run the full HTTP pipeline locally (real `final_9x16.mp4`)
+
+Requires **ffmpeg** and **ffprobe** on your PATH.
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+./scripts/start_local_stack.sh
+```
+
+This starts all nine microservices on `127.0.0.1:8010–8018` and the orchestrator on **`http://127.0.0.1:8000`**, using `SMART_CUT_OBJECT_STORE_ROOT` (default: `.orchestrator-data/` under the repo). Press **Ctrl+C** to stop every process.
+
+Background mode:
+
+```bash
+./scripts/start_local_stack.sh --detach
+./scripts/stop_local_stack.sh
+```
+
+Then start the debug UI (separate terminal):
+
+```bash
+cd frontend && cp -n .env.local.example .env.local && npm install && npm run dev
+```
+
+Open **http://localhost:3000**, upload a 16:9 clip, run the pipeline, then preview/download when `final_9x16` appears.
+
+To use segmented smooth rendering instead of a single static crop, set `compiler_render_mode` to `"smooth_crop"` under `service_config.render_plan_compiler` in [`contracts/examples/job_manifest.sample.json`](contracts/examples/job_manifest.sample.json) (orchestrator copies this template when creating jobs).
+
 ## Validation
 
 Run the current focused test suite with:
@@ -94,6 +126,9 @@ Run the current focused test suite with:
 	services.reframe_planning.tests.test_reframe_planning_api \
 	services.easing_smoothing.tests.test_smoothing_service \
 	services.easing_smoothing.tests.test_smoothing_api \
+	services.render_plan_compiler.tests.test_compiler_service \
+	services.render_plan_compiler.tests.test_compiler_api \
+	services.ffmpeg_renderer.tests.test_ffmpeg_renderer_service \
 	orchestrator.tests.test_path_resolver \
 	orchestrator.tests.test_artifact_helpers \
 	orchestrator.tests.test_pipeline_runner \
@@ -104,9 +139,8 @@ Run the current focused test suite with:
 
 ### Highest Priority
 
-1. Start P1-H01 so the renderer lane can consume `reframe_plan_smooth.json`.
-2. Start P1-H02 so the debug UI can eventually preview/download a real `final_9x16.mp4`.
-3. Add P1-I01 and P1-I02 fixtures/integration coverage around the now-implemented early pipeline.
+1. Wire `ORCHESTRATOR_SERVICE_ENDPOINTS` for `render_plan_compiler` and `ffmpeg_renderer` when running the full HTTP pipeline (implementations live under `services/render_plan_compiler/` and `services/ffmpeg_renderer/`).
+2. Add P1-I01 and P1-I02 fixtures/integration coverage around the full pipeline (mock + real services).
 
 ### Orchestrator Team
 
@@ -137,16 +171,12 @@ Run the current focused test suite with:
 ## Known Limitations
 
 - Real HTTP orchestration depends on `ORCHESTRATOR_SERVICE_ENDPOINTS`; without it, `run_job` still falls back to the mock runner.
-- Debug Frontend (MVP): Next.js app under `frontend/` supports upload/create job, job status + artifact list, and pipeline run (proxied to the orchestrator). Preview/download of `final_9x16.mp4` is not implemented yet (P1-B03).
-- The current body detection implementation uses OpenCV HOG plus fallback logic. It is sufficient to unblock downstream services, but it is not the final quality bar for subject detection.
-- Render plan compilation and FFmpeg rendering are not implemented yet.
-- No production deployment or environment configuration is documented yet.
+- Debug Frontend under `frontend/` supports upload, status, run, and preview/download of `final_9x16.mp4` when that artifact exists (via orchestrator artifact GET).
+- Body detection uses OpenCV HOG plus fallback logic — sufficient for Phase 1 baseline, not the final quality bar for hard clips.
+- Smooth rendering uses segment concat between keyframes — acceptable MVP; per-frame expressions are not required yet.
+- Production deployment (Docker/K8s, shared MinIO, CI) is not fully documented here.
 
 ## Recommended Immediate Task Order
 
-1. P1-A04 (done)
-2. P1-C01 through P1-G03 (done for baseline pipeline)
-3. P1-H01
-4. P1-H02
-5. P1-B03
-6. P1-I01 / P1-I02
+1. P1-A04 through P1-H03 and P1-B03 (baseline done)
+2. P1-I01 / P1-I02 / P1-I03 (fixtures, integration, e2e video)

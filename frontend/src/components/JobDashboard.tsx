@@ -6,6 +6,7 @@ import { getJobStatus } from "@/lib/api";
 import { isTerminalStatus, type JobStatusResponse } from "@/lib/types";
 
 import { ArtifactList } from "./ArtifactList";
+import { JobOutputPreview } from "./JobOutputPreview";
 import { RunButton } from "./RunButton";
 import { StatusBoard } from "./StatusBoard";
 
@@ -95,6 +96,9 @@ export function JobDashboard({ jobId }: { jobId: string }) {
       ) : null}
 
       <StatusBoard status={data.service_status} />
+      {data.artifacts.final_9x16 ? (
+        <JobOutputPreview jobId={jobId} />
+      ) : null}
       <ArtifactList artifacts={data.artifacts} paths={data.paths} />
     </div>
   );
