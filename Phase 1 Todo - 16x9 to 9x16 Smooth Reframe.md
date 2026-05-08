@@ -437,31 +437,31 @@ Done when:
   Owner: Frontend | Assigned To: ฟิล์ม | Write Scope: Debug frontend เท่านั้น | Depends on: P1-A01, P1-A03 | Deliverable: ดู `service_status.json` และ artifact links ได้ — ส่งมอบใน `frontend/` (หน้า `/jobs/[jobId]`, Run + polling, รายการ artifacts)
 - [ ] P1-B03: ทำ Debug Frontend หน้า preview/download output
   Owner: Frontend | Assigned To: ฟิล์ม | Write Scope: Debug frontend เท่านั้น | Depends on: P1-A03, P1-H02 | Deliverable: preview/download `final_9x16.mp4`
-- [ ] P1-C01: ทำ Validation Service
+- [x] P1-C01: ทำ Validation Service
   Owner: Validation | Assigned To: ปาร์ตี้ | Write Scope: Validation service เท่านั้น | Depends on: P1-A01 | Deliverable: `/run` validate input/job config
-- [ ] P1-C02: ทำ Media Metadata Service ด้วย `ffprobe`
+- [x] P1-C02: ทำ Media Metadata Service ด้วย `ffprobe`
   Owner: Media | Assigned To: ปาร์ตี้ | Write Scope: Media metadata service เท่านั้น | Depends on: P1-A01 | Deliverable: `metadata.json`
-- [ ] P1-C03: ทำ Proxy/Frame Sampling Service
+- [x] P1-C03: ทำ Proxy/Frame Sampling Service
   Owner: Media | Assigned To: ปาร์ตี้ | Write Scope: Proxy/frame sampling service เท่านั้น | Depends on: P1-C02 | Deliverable: `proxy.mp4`, `sampled_frames.json`
-- [ ] P1-D01: เลือก model และทำ Body Detection Service skeleton
+- [x] P1-D01: เลือก model และทำ Body Detection Service skeleton
   Owner: Vision AI | Assigned To: ปาร์ตี้ | Write Scope: Body detection service เท่านั้น | Depends on: P1-A01 | Deliverable: `/run` อ่าน proxy และเขียน output mock ได้
-- [ ] P1-D02: ทำ body detection จริงบน sampled frames/proxy
+- [x] P1-D02: ทำ body detection จริงบน sampled frames/proxy
   Owner: Vision AI | Assigned To: ปาร์ตี้ | Write Scope: Body detection service เท่านั้น | Depends on: P1-C03, P1-D01 | Deliverable: `body_tracks_raw.json`
-- [ ] P1-D03: ทำ fallback เมื่อ detect ไม่เจอ
+- [x] P1-D03: ทำ fallback เมื่อ detect ไม่เจอ
   Owner: Vision AI | Assigned To: ปาร์ตี้ | Write Scope: Body detection service เท่านั้น | Depends on: P1-D02 | Deliverable: missing frames + confidence policy
-- [ ] P1-E01: ทำ Track Interpolation Service
+- [x] P1-E01: ทำ Track Interpolation Service
   Owner: Reframe | Assigned To: นนท์ | Write Scope: Track interpolation service เท่านั้น | Depends on: P1-D02 | Deliverable: `body_tracks_interpolated.json`
-- [ ] P1-E02: ทำ outlier removal และ missing strategy
+- [x] P1-E02: ทำ outlier removal และ missing strategy
   Owner: Reframe | Assigned To: นนท์ | Write Scope: Track interpolation service เท่านั้น | Depends on: P1-E01 | Deliverable: track ที่ไม่กระโดดแรง
-- [ ] P1-F01: ทำ Reframe Planning Service
+- [x] P1-F01: ทำ Reframe Planning Service
   Owner: Reframe | Assigned To: นนท์ | Write Scope: Reframe planning service เท่านั้น | Depends on: P1-C02, P1-E01 | Deliverable: `reframe_plan_raw.json`
-- [ ] P1-F02: ทำ crop clamp และ subject framing rule
+- [x] P1-F02: ทำ crop clamp และ subject framing rule
   Owner: Reframe | Assigned To: นนท์ | Write Scope: Reframe planning service เท่านั้น | Depends on: P1-F01 | Deliverable: crop ไม่หลุดขอบ
 - [x] P1-G01: ทำ easing function library
   Owner: Smoothing | Assigned To: ฟิล์ม | Write Scope: Easing/smoothing service เท่านั้น | Depends on: P1-A01 | Deliverable: `linear`, `easeOutCubic`, `easeInOutCubic`, `easeInOutSine` — Python ใน `services/easing_smoothing/` + TypeScript mirror ใน `frontend/src/lib/easing/` (พร้อม unit tests)
-- [ ] P1-G02: ทำ Easing/Smoothing Service
+- [x] P1-G02: ทำ Easing/Smoothing Service
   Owner: Smoothing | Assigned To: ฟิล์ม | Write Scope: Easing/smoothing service เท่านั้น | Depends on: P1-F01, P1-G01 | Deliverable: `reframe_plan_smooth.json`
-- [ ] P1-G03: ทำ velocity/acceleration limit และ dead zone
+- [x] P1-G03: ทำ velocity/acceleration limit และ dead zone
   Owner: Smoothing | Assigned To: ฟิล์ม | Write Scope: Easing/smoothing service เท่านั้น | Depends on: P1-G02 | Deliverable: crop path smooth และ clamp แล้ว
 - [ ] P1-H01: ทำ Render Plan Compiler Service
   Owner: Renderer | Assigned To: ฟิล์ม | Write Scope: Render plan compiler service เท่านั้น | Depends on: P1-C02, P1-G02 | Deliverable: `render_plan.json`
@@ -478,19 +478,19 @@ Done when:
 
 Source of truth for P1-A01 contract files lives in `contracts/CONTRACTS.md` and the JSON Schemas under `contracts/`.
 
-สถานะล่าสุด: P1-A01, P1-A02, P1-A03, และ P1-A04 เสร็จแล้ว โดย P1-A04 เพิ่ม HTTP service runner ที่เรียก `/run` ตามลำดับ, register artifacts/warnings, handle hard-fail ต่อ step, และยัง fallback เป็น mock runner เมื่อยังไม่ config service endpoints. **เพิ่ม (2026-05-07):** P1-B01, P1-B02, และ P1-G01 เสร็จแล้ว (ฟิล์ม) — Debug UI อยู่ที่ `frontend/`; easing library อยู่ที่ `services/easing_smoothing/` และ `frontend/src/lib/easing/`.
+สถานะล่าสุด: P1-A01, P1-A02, P1-A03, และ P1-A04 เสร็จแล้ว โดย P1-A04 เพิ่ม HTTP service runner ที่เรียก `/run` ตามลำดับ, register artifacts/warnings, handle hard-fail ต่อ step, และยัง fallback เป็น mock runner เมื่อยังไม่ config service endpoints. **เพิ่ม (2026-05-07):** P1-B01, P1-B02, และ P1-G01 เสร็จแล้ว (ฟิล์ม) — Debug UI อยู่ที่ `frontend/`; easing library อยู่ที่ `services/easing_smoothing/` และ `frontend/src/lib/easing/`. **เพิ่ม (2026-05-08):** P1-C01, P1-C02, P1-C03, P1-D01, P1-D02, P1-D03, P1-E01, P1-E02, P1-F01, P1-F02, P1-G02, และ P1-G03 มี implementation พร้อม focused tests และ early-pipeline integration ผ่านถึง `reframe_plan_smooth.json`. ฝั่ง body detection ใช้ OpenCV HOG backend พร้อม fallback center track เมื่อ detect ไม่เจอ.
 
 ### งานที่เริ่มได้ทันทีตอนนี้
 
-- ปาร์ตี้: เริ่ม `P1-C01`, `P1-C02`, และ `P1-D01` ได้ทันทีจาก contract ปัจจุบันและ Orchestrator ที่มีอยู่แล้ว
-- ฟิล์ม: `P1-B01`, `P1-B02`, `P1-G01` เสร็จแล้ว — ขั้นถัดไปคือ `P1-G02` (รอ `P1-F01` เท่านั้น เพราะ `P1-G01` พร้อมแล้ว) หรือรอ `P1-H02` แล้วทำ `P1-B03`
-- นนท์: เริ่ม `P1-I01` ได้ทันที และเริ่ม scaffold ของ `P1-I02` ด้วย mock HTTP services ได้ทันที
+- ปาร์ตี้: lane ปัจจุบันพอสำหรับ unblock ทีมอื่นแล้ว; ถ้าจะปรับต่อคือ tuning detector quality, threshold, และ subject selection strategy จากของจริง
+- ฟิล์ม: เริ่ม `P1-H01` ได้ทันที เพราะ `P1-C02` และ `P1-G02` พร้อมแล้ว; หลังจากนั้นต่อ `P1-H02` และกลับมาปิด `P1-B03`
+- นนท์: เริ่ม `P1-I01` และ `P1-I02` ได้ทันที; งาน reframe/interpolation core ใน lane นี้มี baseline implementation แล้ว จึงเหลือเน้น fixture/integration และถ้าต้องการค่อย refine quality เพิ่ม
 
 ### งานที่ต้องรอในแต่ละ lane
 
-- ปาร์ตี้: `P1-C03` รอ `P1-C02`; `P1-D02` รอ `P1-C03` และ `P1-D01`; `P1-D03` รอ `P1-D02`
-- ฟิล์ม: `P1-B03` รอ `P1-H02`; `P1-G02` รอ `P1-F01` เท่านั้น (`P1-G01` เสร็จแล้ว); `P1-G03` รอ `P1-G02`; `P1-H01` รอ `P1-C02` และ `P1-G02`; `P1-H02` รอ `P1-H01`; `P1-H03` รอ `P1-G03` และ `P1-H02`
-- นนท์: `P1-I02` รอ `P1-I01` ในส่วน integration จริง; `P1-E01` รอ `P1-D02`; `P1-E02` รอ `P1-E01`; `P1-F01` รอ `P1-C02` และ `P1-E01`; `P1-F02` รอ `P1-F01`; `P1-I03` รอ `P1-D02`, `P1-G03`, และ `P1-H03`
+- ปาร์ตี้: ไม่มี blocker ที่เป็น critical path แล้ว; งานถัดไปเป็น quality pass มากกว่า dependency pass
+- ฟิล์ม: `P1-B03` รอ `P1-H02`; `P1-H02` รอ `P1-H01`; `P1-H03` รอ `P1-H02`
+- นนท์: `P1-I02` รอ `P1-I01` ในส่วน integration จริง; `P1-I03` รอ `P1-H03`
 
 ### Dependency กลางของทั้งโปรเจกต์
 
@@ -507,9 +507,9 @@ Source of truth for P1-A01 contract files lives in `contracts/CONTRACTS.md` and 
 
 ### จุดที่อาจทับกันและต้องตกลงก่อน
 
-- `reframe_plan_raw.json` และ `reframe_plan_smooth.json`: ทีม Reframe กับ Smoothing ต้องตกลง schema ก่อนเริ่ม P1-F01/P1-G02
+- `reframe_plan_raw.json` และ `reframe_plan_smooth.json`: baseline schema ใช้งานได้แล้ว; ถ้าทีม Reframe/Smoothing จะ refine เพิ่ม ต้องคง backward compatibility กับ pipeline ปัจจุบัน
 - `render_plan.json`: ทีม Smoothing/Renderer ต้องตกลงว่าจะส่ง crop เป็น keyframe list, per-frame list, หรือ expression file ก่อนเริ่ม P1-H01
-- `body_tracks_raw.json`: ทีม Vision AI กับ Track Interpolation ต้องตกลง coordinate ว่าเป็น source resolution หรือ proxy resolution ก่อนเริ่ม P1-D02/P1-E01
+- `body_tracks_raw.json`: ตกลงแล้วว่า downstream ใช้ source resolution แม้ detect บน proxy
 - MinIO helper: ทุก service ต้องใช้ path convention เดียวกัน ห้ามกำหนด object key เองแบบหลุดจาก `jobs/{job_id}/...`
 - FFmpeg crop strategy: ถ้า H03 ใช้ per-frame expression ยาก ให้ตกลง fallback เป็น segment-based render ก่อน เพื่อไม่ block end-to-end
 

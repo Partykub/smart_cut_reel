@@ -8,6 +8,7 @@ Phase 1 focuses on converting one 16:9 source video into a 9:16 vertical output 
 - P1-A02 completed: the Orchestrator now has canonical MinIO path helpers, object-store abstractions, manifest management, and artifact helpers under `orchestrator/`.
 - P1-A03 completed: the Orchestrator now exposes Python service logic plus FastAPI endpoints for create job, get status, and run job.
 - P1-A04 completed: `run_job` now supports real sequential `/run` orchestration with per-step failure handling when service endpoints are configured, and otherwise falls back to the mock runner for local development.
+- P1-C01 through P1-G03 now have baseline implementations for the early pipeline: validation, media metadata, proxy sampling, detector-backed body detection with fallback, track interpolation, reframe planning, and easing/smoothing.
 
 ## Source Of Truth
 
@@ -34,6 +35,16 @@ Phase 1 focuses on converting one 16:9 source video into a 9:16 vertical output 
 - `orchestrator/service.py`: create-job, get-status, and run-job service layer.
 - `orchestrator/api.py`: FastAPI app factory exposing `POST /jobs`, `GET /jobs/{job_id}/status`, and `POST /jobs/{job_id}/run`.
 - `orchestrator/pipeline_runner.py`: configurable HTTP pipeline runner for P1-A04 plus the mock fallback runner for local development.
+
+### Downstream Services
+
+- `services/validation/`: validates source input, target output config, and basic media readability.
+- `services/media_metadata/`: probes source media with `ffprobe` and writes `metadata.json`.
+- `services/proxy_frame_sampling/`: creates `proxy.mp4` and `sampled_frames.json` from source media.
+- `services/body_detection/`: runs an OpenCV HOG-based person detector on proxy frames and falls back to centered tracks when detections are missing.
+- `services/track_interpolation/`: fills short gaps, applies hold/center fallback, and suppresses large outlier jumps.
+- `services/reframe_planning/`: converts interpolated tracks into clamped 9:16 crop keyframes.
+- `services/easing_smoothing/`: smooths raw reframe keyframes with easing, dead-zone handling, and bounded motion.
 
 ## Local Setup
 
@@ -69,6 +80,20 @@ Run the current focused test suite with:
 
 ```bash
 .venv/bin/python -m unittest -v \
+	services.validation.tests.test_validation_service \
+	services.validation.tests.test_validation_api \
+	services.media_metadata.tests.test_media_metadata_service \
+	services.media_metadata.tests.test_media_metadata_api \
+	services.proxy_frame_sampling.tests.test_proxy_frame_sampling_service \
+	services.proxy_frame_sampling.tests.test_proxy_frame_sampling_api \
+	services.body_detection.tests.test_body_detection_service \
+	services.body_detection.tests.test_body_detection_api \
+	services.track_interpolation.tests.test_track_interpolation_service \
+	services.track_interpolation.tests.test_track_interpolation_api \
+	services.reframe_planning.tests.test_reframe_planning_service \
+	services.reframe_planning.tests.test_reframe_planning_api \
+	services.easing_smoothing.tests.test_smoothing_service \
+	services.easing_smoothing.tests.test_smoothing_api \
 	orchestrator.tests.test_path_resolver \
 	orchestrator.tests.test_artifact_helpers \
 	orchestrator.tests.test_pipeline_runner \
@@ -79,9 +104,9 @@ Run the current focused test suite with:
 
 ### Highest Priority
 
-1. Start P1-C01 and P1-C02 so the first real pipeline steps exist behind the Orchestrator runner.
-2. Start P1-B01 and P1-B02 so the team can create jobs and inspect status/artifacts from a debug UI.
-3. Add P1-I02 integration coverage that runs the pipeline against mock HTTP services end-to-end.
+1. Start P1-H01 so the renderer lane can consume `reframe_plan_smooth.json`.
+2. Start P1-H02 so the debug UI can eventually preview/download a real `final_9x16.mp4`.
+3. Add P1-I01 and P1-I02 fixtures/integration coverage around the now-implemented early pipeline.
 
 ### Orchestrator Team
 
@@ -113,14 +138,15 @@ Run the current focused test suite with:
 
 - Real HTTP orchestration depends on `ORCHESTRATOR_SERVICE_ENDPOINTS`; without it, `run_job` still falls back to the mock runner.
 - Debug Frontend (MVP): Next.js app under `frontend/` supports upload/create job, job status + artifact list, and pipeline run (proxied to the orchestrator). Preview/download of `final_9x16.mp4` is not implemented yet (P1-B03).
-- No Validation, Media Metadata, or downstream AI/reframe services implemented yet.
+- The current body detection implementation uses OpenCV HOG plus fallback logic. It is sufficient to unblock downstream services, but it is not the final quality bar for subject detection.
+- Render plan compilation and FFmpeg rendering are not implemented yet.
 - No production deployment or environment configuration is documented yet.
 
 ## Recommended Immediate Task Order
 
 1. P1-A04 (done)
-2. P1-C01
-3. P1-C02
-4. P1-B01 (done)
-5. P1-B02 (done)
-6. P1-G01 (done) — next for Film: P1-G02 after P1-F01, or P1-B03 after P1-H02
+2. P1-C01 through P1-G03 (done for baseline pipeline)
+3. P1-H01
+4. P1-H02
+5. P1-B03
+6. P1-I01 / P1-I02
