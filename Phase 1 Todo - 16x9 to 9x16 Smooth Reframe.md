@@ -67,7 +67,7 @@ jobs/{job_id}/
 
 **Purpose:** ใช้ debug pipeline ไม่ใช่ product UI
 
-**สถานะย่อย (2026-05-07):** มี Next.js debug app ใน `frontend/` แล้ว — รองรับ upload + create job, ดู `service_status` + artifacts, ปุ่ม Run pipeline (ผ่าน proxy ไป Orchestrator). ยังไม่มี preview/download วิดีโอ (`P1-B03`).
+**สถานะย่อย (2026-05-08):** มี Next.js debug app ใน `frontend/` — upload + create job, ดู `service_status` + artifacts, Run pipeline, **preview `<video>` + ปุ่ม download** เมื่อมี artifact `final_9x16` (proxy `/api/jobs/[jobId]/output` → Orchestrator `GET /jobs/{job_id}/artifacts/final_9x16`) — ครอบคลุม `P1-B03` baseline.
 
 Todo:
 
@@ -97,6 +97,7 @@ Todo:
 - เรียก service ตาม pipeline
 - ถ้า service fail ให้ update status พร้อม error
 - update `artifact_manifest.json` หลัง service สร้าง output
+- `GET /jobs/{job_id}/artifacts/{artifact_key}` อ่าน artifact ที่ลงทะเบียนแล้ว (ใช้ debug download / preview)
 
 Phase 1 Pipeline:
 
@@ -435,8 +436,8 @@ Done when:
   Owner: Frontend | Assigned To: ฟิล์ม | Write Scope: Debug frontend เท่านั้น | Depends on: P1-A03 | Deliverable: upload และ create job ได้ — ส่งมอบใน `frontend/` (Next.js App Router + proxy `/api/jobs`)
 - [x] P1-B02: ทำ Debug Frontend หน้า status/artifact viewer
   Owner: Frontend | Assigned To: ฟิล์ม | Write Scope: Debug frontend เท่านั้น | Depends on: P1-A01, P1-A03 | Deliverable: ดู `service_status.json` และ artifact links ได้ — ส่งมอบใน `frontend/` (หน้า `/jobs/[jobId]`, Run + polling, รายการ artifacts)
-- [ ] P1-B03: ทำ Debug Frontend หน้า preview/download output
-  Owner: Frontend | Assigned To: ฟิล์ม | Write Scope: Debug frontend เท่านั้น | Depends on: P1-A03, P1-H02 | Deliverable: preview/download `final_9x16.mp4`
+- [x] P1-B03: ทำ Debug Frontend หน้า preview/download output
+  Owner: Frontend | Assigned To: ฟิล์ม | Write Scope: Debug frontend เท่านั้น | Depends on: P1-A03, P1-H02 | Deliverable: preview/download `final_9x16.mp4` — UI + proxy route; ดาวน์โหลดผ่าน Orchestrator artifact endpoint
 - [x] P1-C01: ทำ Validation Service
   Owner: Validation | Assigned To: ปาร์ตี้ | Write Scope: Validation service เท่านั้น | Depends on: P1-A01 | Deliverable: `/run` validate input/job config
 - [x] P1-C02: ทำ Media Metadata Service ด้วย `ffprobe`
@@ -463,12 +464,12 @@ Done when:
   Owner: Smoothing | Assigned To: ฟิล์ม | Write Scope: Easing/smoothing service เท่านั้น | Depends on: P1-F01, P1-G01 | Deliverable: `reframe_plan_smooth.json`
 - [x] P1-G03: ทำ velocity/acceleration limit และ dead zone
   Owner: Smoothing | Assigned To: ฟิล์ม | Write Scope: Easing/smoothing service เท่านั้น | Depends on: P1-G02 | Deliverable: crop path smooth และ clamp แล้ว
-- [ ] P1-H01: ทำ Render Plan Compiler Service
-  Owner: Renderer | Assigned To: ฟิล์ม | Write Scope: Render plan compiler service เท่านั้น | Depends on: P1-C02, P1-G02 | Deliverable: `render_plan.json`
-- [ ] P1-H02: ทำ FFmpeg Renderer Service แบบ center crop/static crop ก่อน
-  Owner: Renderer | Assigned To: ฟิล์ม | Write Scope: FFmpeg renderer service เท่านั้น | Depends on: P1-H01 | Deliverable: output 9:16 เล่นได้
-- [ ] P1-H03: ทำ FFmpeg Renderer ใช้ smooth crop plan
-  Owner: Renderer | Assigned To: ฟิล์ม | Write Scope: FFmpeg renderer service เท่านั้น | Depends on: P1-G03, P1-H02 | Deliverable: output 9:16 ที่ pan ตาม crop plan
+- [x] P1-H01: ทำ Render Plan Compiler Service
+  Owner: Renderer | Assigned To: ฟิล์ม | Write Scope: Render plan compiler service เท่านั้น | Depends on: P1-C02, P1-G02 | Deliverable: `render_plan.json` — `services/render_plan_compiler/`; config `compiler_render_mode` (`static_crop` | `smooth_crop`) ใน `job_manifest.service_config.render_plan_compiler`
+- [x] P1-H02: ทำ FFmpeg Renderer Service แบบ center crop/static crop ก่อน
+  Owner: Renderer | Assigned To: ฟิล์ม | Write Scope: FFmpeg renderer service เท่านั้น | Depends on: P1-H01 | Deliverable: output 9:16 เล่นได้ — `services/ffmpeg_renderer/` โหมด `static_crop` (crop จาก keyframe แรก)
+- [x] P1-H03: ทำ FFmpeg Renderer ใช้ smooth crop plan
+  Owner: Renderer | Assigned To: ฟิล์ม | Write Scope: FFmpeg renderer service เท่านั้น | Depends on: P1-G03, P1-H02 | Deliverable: output 9:16 ที่ pan ตาม crop plan — โหมด `smooth_crop` (segment ระหว่าง keyframes + concat + mux เสียง)
 - [ ] P1-I01: ทำ sample input/output fixture สำหรับทุก service
   Owner: QA/Integration | Assigned To: นนท์ | Write Scope: `fixtures/` หรือ test data เท่านั้น | Depends on: P1-A01 | Deliverable: sample job + sample artifact
 - [ ] P1-I02: ทำ integration test pipeline ด้วย mock service
@@ -478,19 +479,19 @@ Done when:
 
 Source of truth for P1-A01 contract files lives in `contracts/CONTRACTS.md` and the JSON Schemas under `contracts/`.
 
-สถานะล่าสุด: P1-A01, P1-A02, P1-A03, และ P1-A04 เสร็จแล้ว โดย P1-A04 เพิ่ม HTTP service runner ที่เรียก `/run` ตามลำดับ, register artifacts/warnings, handle hard-fail ต่อ step, และยัง fallback เป็น mock runner เมื่อยังไม่ config service endpoints. **เพิ่ม (2026-05-07):** P1-B01, P1-B02, และ P1-G01 เสร็จแล้ว (ฟิล์ม) — Debug UI อยู่ที่ `frontend/`; easing library อยู่ที่ `services/easing_smoothing/` และ `frontend/src/lib/easing/`. **เพิ่ม (2026-05-08):** P1-C01, P1-C02, P1-C03, P1-D01, P1-D02, P1-D03, P1-E01, P1-E02, P1-F01, P1-F02, P1-G02, และ P1-G03 มี implementation พร้อม focused tests และ early-pipeline integration ผ่านถึง `reframe_plan_smooth.json`. ฝั่ง body detection ใช้ OpenCV HOG backend พร้อม fallback center track เมื่อ detect ไม่เจอ.
+สถานะล่าสุด: P1-A01, P1-A02, P1-A03, และ P1-A04 เสร็จแล้ว โดย P1-A04 เพิ่ม HTTP service runner ที่เรียก `/run` ตามลำดับ, register artifacts/warnings, handle hard-fail ต่อ step, และยัง fallback เป็น mock runner เมื่อยังไม่ config service endpoints. **เพิ่ม (2026-05-07):** P1-B01, P1-B02, และ P1-G01 เสร็จแล้ว (ฟิล์ม) — Debug UI อยู่ที่ `frontend/`; easing library อยู่ที่ `services/easing_smoothing/` และ `frontend/src/lib/easing/`. **เพิ่ม (2026-05-08):** P1-C01, P1-C02, P1-C03, P1-D01, P1-D02, P1-D03, P1-E01, P1-E02, P1-F01, P1-F02, P1-G02, และ P1-G03 มี implementation พร้อม focused tests และ early-pipeline integration ผ่านถึง `reframe_plan_smooth.json`. ฝั่ง body detection ใช้ OpenCV HOG backend พร้อม fallback center track เมื่อ detect ไม่เจอ. **เพิ่ม (2026-05-08):** P1-H01, P1-H02, P1-H03, และ P1-B03 เสร็จแล้ว (ฟิล์ม) — `services/render_plan_compiler/`, `services/ffmpeg_renderer/` (`static_crop` / `smooth_crop`), Orchestrator `GET /jobs/{job_id}/artifacts/{artifact_key}`, frontend preview/download `/api/jobs/[jobId]/output`.
 
 ### งานที่เริ่มได้ทันทีตอนนี้
 
 - ปาร์ตี้: lane ปัจจุบันพอสำหรับ unblock ทีมอื่นแล้ว; ถ้าจะปรับต่อคือ tuning detector quality, threshold, และ subject selection strategy จากของจริง
-- ฟิล์ม: เริ่ม `P1-H01` ได้ทันที เพราะ `P1-C02` และ `P1-G02` พร้อมแล้ว; หลังจากนั้นต่อ `P1-H02` และกลับมาปิด `P1-B03`
-- นนท์: เริ่ม `P1-I01` และ `P1-I02` ได้ทันที; งาน reframe/interpolation core ใน lane นี้มี baseline implementation แล้ว จึงเหลือเน้น fixture/integration และถ้าต้องการค่อย refine quality เพิ่ม
+- ฟิล์ม: **งาน P1 ใน board ของฟิล์มครบแล้ว (B01–B03, G01–G03, H01–H03)** — งานถัดไปเป็น **คุณภาพ/ปรับจูน** (เช่น smooth concat, ทดสอบ pipeline HTTP จริง, UX debug UI) ไม่ใช่ task ใหม่ใน checklist
+- นนท์: เริ่ม `P1-I01`, `P1-I02`, และเตรียม `P1-I03` ได้ทันที — critical path Phase 1 เหลือ **integration / fixtures / e2e**
 
 ### งานที่ต้องรอในแต่ละ lane
 
 - ปาร์ตี้: ไม่มี blocker ที่เป็น critical path แล้ว; งานถัดไปเป็น quality pass มากกว่า dependency pass
-- ฟิล์ม: `P1-B03` รอ `P1-H02`; `P1-H02` รอ `P1-H01`; `P1-H03` รอ `P1-H02`
-- นนท์: `P1-I02` รอ `P1-I01` ในส่วน integration จริง; `P1-I03` รอ `P1-H03`
+- ฟิล์ม: ไม่มี dependency ค้างใน board แล้ว; การรัน pipeline **จริง** (ได้ไฟล์ mp4 ครบ) ต้องใช้ **HTTP runner + ยก service** ตาม `README.md` ไม่ใช่ mock อย่างเดียว
+- นนท์: `P1-I02` รอ `P1-I01` ในส่วน integration จริง; `P1-I03` พร้อมเริ่มเมื่อมี fixtures และทดสอบวิดีโอสั้น (โค้ด renderer/crop path พร้อมแล้ว)
 
 ### Dependency กลางของทั้งโปรเจกต์
 
@@ -508,7 +509,7 @@ Source of truth for P1-A01 contract files lives in `contracts/CONTRACTS.md` and 
 ### จุดที่อาจทับกันและต้องตกลงก่อน
 
 - `reframe_plan_raw.json` และ `reframe_plan_smooth.json`: baseline schema ใช้งานได้แล้ว; ถ้าทีม Reframe/Smoothing จะ refine เพิ่ม ต้องคง backward compatibility กับ pipeline ปัจจุบัน
-- `render_plan.json`: ทีม Smoothing/Renderer ต้องตกลงว่าจะส่ง crop เป็น keyframe list, per-frame list, หรือ expression file ก่อนเริ่ม P1-H01
+- `render_plan.json`: baseline ใช้ `crop_representation: keyframe_list` + snapshot keyframes ในแผน; โหมด smooth ใช้ segment concat ใน FFmpeg renderer — ถ้าจะเปลี่ยนเป็น per-frame list / expression file ต้องคุย backward compatibility กับ compiler/renderer ปัจจุบัน
 - `body_tracks_raw.json`: ตกลงแล้วว่า downstream ใช้ source resolution แม้ detect บน proxy
 - MinIO helper: ทุก service ต้องใช้ path convention เดียวกัน ห้ามกำหนด object key เองแบบหลุดจาก `jobs/{job_id}/...`
 - FFmpeg crop strategy: ถ้า H03 ใช้ per-frame expression ยาก ให้ตกลง fallback เป็น segment-based render ก่อน เพื่อไม่ block end-to-end

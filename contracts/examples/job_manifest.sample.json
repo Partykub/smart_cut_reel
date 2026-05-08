@@ -63,7 +63,8 @@
         },
         "render_plan_compiler": {
             "crop_representation": "keyframe_list",
-            "audio_policy": "copy_if_possible_else_aac"
+            "audio_policy": "copy_if_possible_else_aac",
+            "compiler_render_mode": "static_crop"
         },
         "ffmpeg_renderer": {
             "video_codec": "libx264",

@@ -298,6 +298,13 @@
                                 "copy_if_possible_else_aac",
                                 "aac_transcode"
                             ]
+                        },
+                        "compiler_render_mode": {
+                            "type": "string",
+                            "enum": [
+                                "static_crop",
+                                "smooth_crop"
+                            ]
                         }
                     }
                 },
