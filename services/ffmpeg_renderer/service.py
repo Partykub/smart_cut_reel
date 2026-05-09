@@ -368,7 +368,7 @@ class FFmpegRendererService:
                 break
 
             current_t = frame_index / fps
-            track = self._nearest_track(tracks, track_times, current_t)
+            track = self._track_for_time(tracks, track_times, current_t)
             crop_box = self._crop_box_for_time(
                 keyframes=sorted_keyframes,
                 t=current_t,
@@ -446,7 +446,7 @@ class FFmpegRendererService:
         cmd.append(str(out_path))
         self._run_ffmpeg(cmd)
 
-    def _nearest_track(
+    def _track_for_time(
         self,
         tracks: list[dict[str, Any]],
         track_times: list[float],
@@ -455,17 +455,10 @@ class FFmpegRendererService:
         if not track_times:
             return None
 
-        index = bisect.bisect_left(track_times, t)
-        candidate_indexes = []
-        if index < len(track_times):
-            candidate_indexes.append(index)
-        if index > 0:
-            candidate_indexes.append(index - 1)
-        if not candidate_indexes:
-            return None
-
-        best_index = min(candidate_indexes, key=lambda candidate: abs(track_times[candidate] - t))
-        return tracks[best_index]
+        index = bisect.bisect_right(track_times, t) - 1
+        if index < 0:
+            return tracks[0]
+        return tracks[index]
 
     def _crop_box_for_time(
         self,

@@ -24,7 +24,7 @@ class ProxyFrameSamplingApiTests(unittest.TestCase):
                 "job_id": "job_test",
                 "service_config": {
                     "proxy_frame_sampling": {
-                        "sample_fps": 5,
+                        "sample_every_n_source_frames": 3,
                         "proxy_height": 540,
                     }
                 },
@@ -38,7 +38,7 @@ class ProxyFrameSamplingApiTests(unittest.TestCase):
                 }
             },
         )
-        self.store.upload_json(self.metadata_key, {"width": 1920, "height": 1080, "duration": 1.0})
+        self.store.upload_json(self.metadata_key, {"width": 1920, "height": 1080, "fps": 30.0, "duration": 1.0})
 
         import os
 
@@ -85,5 +85,5 @@ class ProxyFrameSamplingApiTests(unittest.TestCase):
         )
         self.assertEqual(self.store.download_bytes(self.proxy_key), b"proxy-bytes")
         sampled_frames = self.store.download_json(self.sampled_frames_key)
-        self.assertEqual(sampled_frames["frame_interval_seconds"], 0.2)
+        self.assertEqual(sampled_frames["frame_interval_seconds"], 0.1)
         mock_build_proxy.assert_called_once_with(b"video-bytes", proxy_height=540)

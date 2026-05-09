@@ -70,6 +70,11 @@ class BodyDetectionServiceTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
 
+    def test_config_defaults_to_high_confidence_threshold(self) -> None:
+        config = self.service._config(build_context(self.request, self.store))
+
+        self.assertEqual(config["min_confidence"], 0.9)
+
     @patch.object(BodyDetectionService, "_detect_proxy_frames")
     def test_writes_detected_and_fallback_tracks(self, mock_detect_proxy_frames) -> None:
         mock_detect_proxy_frames.return_value = DetectionRunResult(

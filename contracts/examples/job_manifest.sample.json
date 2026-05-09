@@ -37,12 +37,12 @@
     },
     "service_config": {
         "proxy_frame_sampling": {
-            "sample_fps": 5,
+            "sample_every_n_source_frames": 1,
             "proxy_height": 540
         },
         "body_detection": {
             "subject_selection_strategy": "nearest_previous_crop_center",
-            "min_confidence": 0.5,
+            "min_confidence": 0.9,
             "model_path": "yolov8m.pt",
             "device_preference": "gpu_first",
             "image_size": 640,

@@ -147,7 +147,7 @@ class BodyDetectionService:
     def _config(self, context: ServiceContext) -> dict[str, Any]:
         defaults = {
             "subject_selection_strategy": "nearest_previous_crop_center",
-            "min_confidence": 0.5,
+            "min_confidence": 0.9,
             "model_path": os.getenv("BODY_DETECTION_YOLO_MODEL", "yolov8m.pt"),
             "device_preference": "gpu_first",
             "image_size": 640,

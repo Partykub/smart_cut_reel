@@ -256,5 +256,21 @@ class FFmpegRendererSmoothTests(unittest.TestCase):
         self.assertEqual(streams[0]["codec_name"], "h264")
 
 
+class FFmpegRendererTrackLookupTests(unittest.TestCase):
+    def test_overlay_uses_current_or_previous_track_not_future_track(self) -> None:
+        service = FFmpegRendererService()
+        tracks = [
+            {"frame_index": 789, "t": 157.8, "bbox": {"x": 10}},
+            {"frame_index": 790, "t": 158.0, "bbox": {"x": 20}},
+            {"frame_index": 791, "t": 158.2, "bbox": {"x": 30}},
+        ]
+        track_times = [157.8, 158.0, 158.2]
+
+        selected = service._track_for_time(tracks, track_times, 158.1)
+
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected["frame_index"], 790)
+
+
 if __name__ == "__main__":
     unittest.main()

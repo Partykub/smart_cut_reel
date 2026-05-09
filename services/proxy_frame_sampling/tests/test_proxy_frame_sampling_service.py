@@ -35,7 +35,7 @@ class ProxyFrameSamplingServiceTests(unittest.TestCase):
                 "job_id": "job_test",
                 "service_config": {
                     "proxy_frame_sampling": {
-                        "sample_fps": 5,
+                        "sample_every_n_source_frames": 3,
                         "proxy_height": 540,
                     }
                 },
@@ -56,6 +56,7 @@ class ProxyFrameSamplingServiceTests(unittest.TestCase):
             {
                 "width": 1920,
                 "height": 1080,
+                "fps": 30.0,
                 "duration": 1.0,
             },
         )
@@ -75,6 +76,7 @@ class ProxyFrameSamplingServiceTests(unittest.TestCase):
         )
         sampled_frames = self.store.download_json(self.request.expected_outputs["sampled_frames"])
         self.assertEqual(sampled_frames["proxy_resolution"], {"width": 960, "height": 540})
+        self.assertEqual(sampled_frames["sample_fps"], 10.0)
         self.assertEqual(sampled_frames["frames"][0], {"index": 0, "t": 0.0})
-        self.assertEqual(sampled_frames["frames"][-1], {"index": 5, "t": 1.0})
+        self.assertEqual(sampled_frames["frames"][-1], {"index": 10, "t": 1.0})
         mock_build_proxy.assert_called_once_with(b"video-bytes", proxy_height=540)
