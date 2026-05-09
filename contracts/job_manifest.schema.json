@@ -1,8 +1,8 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://smart-cut-reel/contracts/job_manifest.schema.json",
-    "title": "Phase 1 Job Manifest",
-    "description": "Phase 1 single-input job contract for 16:9 to 9:16 smooth reframing.",
+    "title": "Smart Cut Reel Job Manifest",
+    "description": "Job manifest contract for Phase 1 (16:9 to 9:16 smooth reframe), Phase 2 (dead air cutting), and Phase 3 (audio quality chain — Silero VAD + denoise + LUFS + ASR + filler word cut) pipelines.",
     "type": "object",
     "additionalProperties": false,
     "required": [
@@ -17,7 +17,11 @@
     "properties": {
         "schema_version": {
             "type": "string",
-            "const": "1.0.0"
+            "enum": [
+                "1.0.0",
+                "2.0.0",
+                "3.0.0"
+            ]
         },
         "job_id": {
             "type": "string",
@@ -120,30 +124,30 @@
             }
         },
         "pipeline": {
+            "oneOf": [
+                {
+                    "$ref": "#/$defs/phase1Pipeline"
+                },
+                {
+                    "$ref": "#/$defs/phase2Pipeline"
+                },
+                {
+                    "$ref": "#/$defs/phase3Pipeline"
+                }
+            ]
+        },
+        "enabled_features": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-                "pipeline_id",
-                "steps"
-            ],
             "properties": {
-                "pipeline_id": {
-                    "type": "string",
-                    "const": "phase1_smooth_reframe_16x9_to_9x16"
+                "remove_dead_air": {
+                    "type": "boolean"
                 },
-                "steps": {
-                    "type": "array",
-                    "const": [
-                        "validation",
-                        "media_metadata",
-                        "proxy_frame_sampling",
-                        "body_detection",
-                        "track_interpolation",
-                        "reframe_planning",
-                        "easing_smoothing",
-                        "render_plan_compiler",
-                        "ffmpeg_renderer"
-                    ]
+                "enhance_audio": {
+                    "type": "boolean"
+                },
+                "remove_filler_words": {
+                    "type": "boolean"
                 }
             }
         },
@@ -303,7 +307,8 @@
                             "type": "string",
                             "enum": [
                                 "static_crop",
-                                "smooth_crop"
+                                "smooth_crop",
+                                "smooth_crop_with_cuts"
                             ]
                         }
                     }
@@ -325,6 +330,280 @@
                             ]
                         }
                     }
+                },
+                "audio_extraction": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "sample_rate": {
+                            "type": "integer",
+                            "enum": [
+                                8000,
+                                16000,
+                                22050,
+                                44100,
+                                48000
+                            ]
+                        },
+                        "channels": {
+                            "type": "integer",
+                            "enum": [
+                                1,
+                                2
+                            ]
+                        }
+                    }
+                },
+                "voice_activity_detection": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "model": {
+                            "type": "string",
+                            "enum": [
+                                "energy",
+                                "silero_v4",
+                                "silero_v5"
+                            ]
+                        },
+                        "audio_source": {
+                            "type": "string",
+                            "enum": [
+                                "extracted_audio",
+                                "enhanced_audio",
+                                "enhanced_audio_or_extracted"
+                            ]
+                        },
+                        "energy_threshold_db": {
+                            "type": "number"
+                        },
+                        "speech_threshold": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                        },
+                        "min_speech_duration_seconds": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "min_silence_duration_seconds": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "speech_pad_seconds": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "frame_duration_seconds": {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                        }
+                    }
+                },
+                "audio_enhancement": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "denoise_model": {
+                            "type": "string",
+                            "enum": [
+                                "off",
+                                "std",
+                                "leaky"
+                            ]
+                        },
+                        "target_lufs": {
+                            "type": "number"
+                        },
+                        "true_peak_db": {
+                            "type": "number"
+                        },
+                        "loudness_range": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "highpass_frequency_hz": {
+                            "type": "number",
+                            "minimum": 0
+                        }
+                    }
+                },
+                "transcription": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "model": {
+                            "type": "string",
+                            "enum": [
+                                "tiny",
+                                "tiny.en",
+                                "base",
+                                "base.en",
+                                "small",
+                                "small.en",
+                                "medium",
+                                "medium.en"
+                            ]
+                        },
+                        "language": {
+                            "type": "string"
+                        },
+                        "compute_type": {
+                            "type": "string",
+                            "enum": [
+                                "int8",
+                                "int8_float16",
+                                "float16",
+                                "float32"
+                            ]
+                        },
+                        "filler_words_th": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "minLength": 1
+                            }
+                        },
+                        "filler_words_en": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "minLength": 1
+                            }
+                        },
+                        "filler_min_silence_around_seconds": {
+                            "type": "number",
+                            "minimum": 0
+                        }
+                    }
+                },
+                "dead_air_cut_planning": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "silence_threshold_seconds": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "keep_padding_before": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "keep_padding_after": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "min_keep_segment_seconds": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "filler_padding_before": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "filler_padding_after": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "merge_adjacent_cuts_within_seconds": {
+                            "type": "number",
+                            "minimum": 0
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "$defs": {
+        "phase1Pipeline": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "pipeline_id",
+                "steps"
+            ],
+            "properties": {
+                "pipeline_id": {
+                    "type": "string",
+                    "const": "phase1_smooth_reframe_16x9_to_9x16"
+                },
+                "steps": {
+                    "type": "array",
+                    "const": [
+                        "validation",
+                        "media_metadata",
+                        "proxy_frame_sampling",
+                        "body_detection",
+                        "track_interpolation",
+                        "reframe_planning",
+                        "easing_smoothing",
+                        "render_plan_compiler",
+                        "ffmpeg_renderer"
+                    ]
+                }
+            }
+        },
+        "phase2Pipeline": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "pipeline_id",
+                "steps"
+            ],
+            "properties": {
+                "pipeline_id": {
+                    "type": "string",
+                    "const": "phase2_smooth_reframe_dead_air_cut"
+                },
+                "steps": {
+                    "type": "array",
+                    "const": [
+                        "validation",
+                        "media_metadata",
+                        "audio_extraction",
+                        "voice_activity_detection",
+                        "dead_air_cut_planning",
+                        "proxy_frame_sampling",
+                        "body_detection",
+                        "track_interpolation",
+                        "reframe_planning",
+                        "easing_smoothing",
+                        "render_plan_compiler",
+                        "ffmpeg_renderer"
+                    ]
+                }
+            }
+        },
+        "phase3Pipeline": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "pipeline_id",
+                "steps"
+            ],
+            "properties": {
+                "pipeline_id": {
+                    "type": "string",
+                    "const": "phase3_audio_quality_cut"
+                },
+                "steps": {
+                    "type": "array",
+                    "const": [
+                        "validation",
+                        "media_metadata",
+                        "audio_extraction",
+                        "audio_enhancement",
+                        "voice_activity_detection",
+                        "transcription",
+                        "dead_air_cut_planning",
+                        "proxy_frame_sampling",
+                        "body_detection",
+                        "track_interpolation",
+                        "reframe_planning",
+                        "easing_smoothing",
+                        "render_plan_compiler",
+                        "ffmpeg_renderer"
+                    ]
                 }
             }
         }

@@ -44,6 +44,7 @@ class RunResponse:
     status: Literal["success"] = "success"
     outputs: dict[str, str] = field(default_factory=dict)
     warnings: list[ServiceWarning] = field(default_factory=list)
+    metrics: dict[str, Any] = field(default_factory=dict)
 
 
 class ServiceContext:

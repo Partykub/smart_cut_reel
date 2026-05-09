@@ -1,6 +1,7 @@
-from pathlib import Path
+import json
 import tempfile
 import unittest
+from pathlib import Path
 
 from orchestrator.api import create_app
 from orchestrator.object_store import FilesystemObjectStore
@@ -94,3 +95,90 @@ class OrchestratorApiTests(unittest.TestCase):
         response = self.client.get(f"/jobs/{created['job_id']}/artifacts/final_9x16")
 
         self.assertEqual(response.status_code, 404)
+
+    def test_create_job_with_phase2_pipeline_id(self) -> None:
+        response = self.client.post(
+            "/jobs",
+            files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
+            data={
+                "created_by": "debug_frontend",
+                "pipeline_id": "phase2_smooth_reframe_dead_air_cut",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["pipeline"]["pipeline_id"], "phase2_smooth_reframe_dead_air_cut")
+        self.assertEqual(len(payload["pipeline"]["steps"]), 12)
+        self.assertEqual(payload["enabled_features"], {"remove_dead_air": True})
+        self.assertEqual(len(payload["service_status"]["steps"]), 12)
+        self.assertIn("audio_extraction", payload["service_status"]["steps"])
+
+    def test_create_job_rejects_unknown_pipeline_id(self) -> None:
+        response = self.client.post(
+            "/jobs",
+            files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
+            data={"created_by": "debug_frontend", "pipeline_id": "phase99_made_up"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Unknown pipeline_id", response.json()["detail"])
+
+    def test_create_job_overrides_enabled_features_with_form_field(self) -> None:
+        """The frontend can flip individual feature flags by sending an
+        ``enabled_features`` JSON object alongside ``pipeline_id``; the
+        orchestrator merges those flags onto the manifest template so users
+        can e.g. opt out of filler-word cutting on Phase 3 jobs.
+        """
+        response = self.client.post(
+            "/jobs",
+            files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
+            data={
+                "created_by": "debug_frontend",
+                "pipeline_id": "phase3_audio_quality_cut",
+                "enabled_features": json.dumps(
+                    {
+                        "remove_dead_air": True,
+                        "enhance_audio": True,
+                        "remove_filler_words": False,
+                    }
+                ),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(
+            payload["enabled_features"],
+            {"remove_dead_air": True, "enhance_audio": True},
+        )
+
+    def test_create_job_rejects_invalid_enabled_features_json(self) -> None:
+        response = self.client.post(
+            "/jobs",
+            files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
+            data={
+                "created_by": "debug_frontend",
+                "pipeline_id": "phase2_smooth_reframe_dead_air_cut",
+                "enabled_features": "not-json",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("enabled_features", response.json()["detail"])
+
+    def test_run_job_with_phase2_pipeline_marks_all_twelve_steps_complete(self) -> None:
+        created = self.client.post(
+            "/jobs",
+            files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
+            data={
+                "created_by": "debug_frontend",
+                "pipeline_id": "phase2_smooth_reframe_dead_air_cut",
+            },
+        ).json()
+
+        response = self.client.post(f"/jobs/{created['job_id']}/run").json()
+
+        self.assertEqual(response["service_status"]["status"], "success")
+        terminal_statuses = {state["status"] for state in response["service_status"]["steps"].values()}
+        self.assertEqual(terminal_statuses, {"success"})

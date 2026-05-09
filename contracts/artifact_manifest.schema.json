@@ -1,8 +1,8 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://smart-cut-reel/contracts/artifact_manifest.schema.json",
-    "title": "Phase 1 Artifact Manifest",
-    "description": "Registry of artifacts and outputs produced by the Phase 1 smooth reframe pipeline.",
+    "title": "Smart Cut Reel Artifact Manifest",
+    "description": "Registry of artifacts and outputs produced by the Phase 1 smooth reframe pipeline, Phase 2 dead air cutting pipeline, and Phase 3 audio quality chain (audio enhancement + ASR + filler word cut).",
     "type": "object",
     "additionalProperties": false,
     "required": [
@@ -14,7 +14,11 @@
     "properties": {
         "schema_version": {
             "type": "string",
-            "const": "1.0.0"
+            "enum": [
+                "1.0.0",
+                "2.0.0",
+                "3.0.0"
+            ]
         },
         "job_id": {
             "type": "string",
@@ -30,6 +34,21 @@
             "properties": {
                 "metadata": {
                     "$ref": "#/$defs/metadataArtifact"
+                },
+                "extracted_audio": {
+                    "$ref": "#/$defs/extractedAudioArtifact"
+                },
+                "enhanced_audio": {
+                    "$ref": "#/$defs/enhancedAudioArtifact"
+                },
+                "vad_segments": {
+                    "$ref": "#/$defs/vadSegmentsArtifact"
+                },
+                "transcript": {
+                    "$ref": "#/$defs/transcriptArtifact"
+                },
+                "cut_plan": {
+                    "$ref": "#/$defs/cutPlanArtifact"
                 },
                 "proxy": {
                     "$ref": "#/$defs/proxyArtifact"
@@ -105,6 +124,106 @@
                         },
                         "produced_by": {
                             "const": "media_metadata"
+                        },
+                        "content_type": {
+                            "const": "application/json"
+                        }
+                    }
+                }
+            ]
+        },
+        "extractedAudioArtifact": {
+            "allOf": [
+                {
+                    "$ref": "#/$defs/baseArtifact"
+                },
+                {
+                    "properties": {
+                        "object_key": {
+                            "pattern": "^jobs/[^/]+/artifacts/extracted_audio\\.wav$"
+                        },
+                        "produced_by": {
+                            "const": "audio_extraction"
+                        },
+                        "content_type": {
+                            "const": "audio/wav"
+                        }
+                    }
+                }
+            ]
+        },
+        "enhancedAudioArtifact": {
+            "allOf": [
+                {
+                    "$ref": "#/$defs/baseArtifact"
+                },
+                {
+                    "properties": {
+                        "object_key": {
+                            "pattern": "^jobs/[^/]+/artifacts/enhanced_audio\\.wav$"
+                        },
+                        "produced_by": {
+                            "const": "audio_enhancement"
+                        },
+                        "content_type": {
+                            "const": "audio/wav"
+                        }
+                    }
+                }
+            ]
+        },
+        "transcriptArtifact": {
+            "allOf": [
+                {
+                    "$ref": "#/$defs/baseArtifact"
+                },
+                {
+                    "properties": {
+                        "object_key": {
+                            "pattern": "^jobs/[^/]+/artifacts/transcript\\.json$"
+                        },
+                        "produced_by": {
+                            "const": "transcription"
+                        },
+                        "content_type": {
+                            "const": "application/json"
+                        }
+                    }
+                }
+            ]
+        },
+        "vadSegmentsArtifact": {
+            "allOf": [
+                {
+                    "$ref": "#/$defs/baseArtifact"
+                },
+                {
+                    "properties": {
+                        "object_key": {
+                            "pattern": "^jobs/[^/]+/artifacts/vad_segments\\.json$"
+                        },
+                        "produced_by": {
+                            "const": "voice_activity_detection"
+                        },
+                        "content_type": {
+                            "const": "application/json"
+                        }
+                    }
+                }
+            ]
+        },
+        "cutPlanArtifact": {
+            "allOf": [
+                {
+                    "$ref": "#/$defs/baseArtifact"
+                },
+                {
+                    "properties": {
+                        "object_key": {
+                            "pattern": "^jobs/[^/]+/artifacts/cut_plan\\.json$"
+                        },
+                        "produced_by": {
+                            "const": "dead_air_cut_planning"
                         },
                         "content_type": {
                             "const": "application/json"

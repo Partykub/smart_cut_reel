@@ -1,4 +1,4 @@
-"""Schema-aware manifest helpers for Phase 1 orchestrator state."""
+"""Schema-aware manifest helpers for orchestrator state (Phase 1 + Phase 2)."""
 
 from __future__ import annotations
 
@@ -9,8 +9,11 @@ from typing import Any
 
 from .contracts import ARTIFACT_CONTENT_TYPES
 from .contracts import ARTIFACT_PRODUCERS
-from .contracts import PIPELINE_STEP_IDS
-from .contracts import SCHEMA_VERSION
+from .contracts import KNOWN_PIPELINE_STEP_IDS
+from .contracts import PHASE_1_PIPELINE_ID
+from .contracts import PHASE_1_STEP_IDS
+from .contracts import PIPELINE_STEPS_BY_ID
+from .contracts import schema_version_for_pipeline
 from .contracts import validate_document
 from .object_store import ObjectStore
 from .path_resolver import artifact_path
@@ -48,14 +51,27 @@ class ManifestManager:
     def write_service_status(self, job_id: str, document: dict[str, Any]) -> None:
         self._write_manifest(job_id, "service_status", document)
 
+    def pipeline_steps(self, job_id: str) -> tuple[str, ...]:
+        manifest = self.read_job_manifest(job_id)
+        steps = manifest.get("pipeline", {}).get("steps")
+        if not isinstance(steps, list) or not steps:
+            return PHASE_1_STEP_IDS
+        return tuple(str(step) for step in steps)
+
     def create_initial_job_state(self, job_manifest: dict[str, Any]) -> None:
         job_id = validate_job_id(job_manifest["job_id"])
         created_at = job_manifest.get("created_at", utc_now())
+        pipeline_id = job_manifest.get("pipeline", {}).get("pipeline_id", PHASE_1_PIPELINE_ID)
+        if pipeline_id in PIPELINE_STEPS_BY_ID:
+            steps = PIPELINE_STEPS_BY_ID[pipeline_id]
+        else:
+            steps = tuple(job_manifest["pipeline"]["steps"])
 
+        schema_version = schema_version_for_pipeline(pipeline_id)
         self.write_job_manifest(job_id, deepcopy(job_manifest))
 
         artifact_manifest = {
-            "schema_version": SCHEMA_VERSION,
+            "schema_version": schema_version,
             "job_id": job_id,
             "updated_at": created_at,
             "artifacts": {},
@@ -63,7 +79,7 @@ class ManifestManager:
         self.write_artifact_manifest(job_id, artifact_manifest)
 
         service_status = {
-            "schema_version": SCHEMA_VERSION,
+            "schema_version": schema_version,
             "job_id": job_id,
             "status": "pending",
             "current_step": None,
@@ -74,7 +90,7 @@ class ManifestManager:
                     "started_at": None,
                     "finished_at": None,
                 }
-                for step_id in PIPELINE_STEP_IDS
+                for step_id in steps
             },
             "warnings": [],
             "errors": [],
@@ -124,11 +140,17 @@ class ManifestManager:
         overall_status: str | None = None,
         current_step: str | None | object = _UNSET,
     ) -> dict[str, Any]:
-        if step_id not in PIPELINE_STEP_IDS:
-            allowed = ", ".join(PIPELINE_STEP_IDS)
+        if step_id not in KNOWN_PIPELINE_STEP_IDS:
+            allowed = ", ".join(KNOWN_PIPELINE_STEP_IDS)
             raise KeyError(f"Unknown step_id '{step_id}'. Expected one of: {allowed}.")
 
         status_document = self.read_service_status(job_id)
+        if step_id not in status_document["steps"]:
+            allowed = ", ".join(sorted(status_document["steps"]))
+            raise KeyError(
+                f"Step '{step_id}' is not part of this job's pipeline. Job pipeline steps: {allowed}."
+            )
+
         status_document["steps"][step_id]["status"] = step_status
         if started_at is not _UNSET:
             status_document["steps"][step_id]["started_at"] = started_at
@@ -152,8 +174,8 @@ class ManifestManager:
         step: str,
         created_at: str | None = None,
     ) -> dict[str, Any]:
-        if step not in PIPELINE_STEP_IDS:
-            allowed = ", ".join(PIPELINE_STEP_IDS)
+        if step not in KNOWN_PIPELINE_STEP_IDS:
+            allowed = ", ".join(KNOWN_PIPELINE_STEP_IDS)
             raise KeyError(f"Unknown step '{step}'. Expected one of: {allowed}.")
 
         status_document = self.read_service_status(job_id)

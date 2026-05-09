@@ -1,0 +1,22 @@
+{
+    "job_id": "job_phase2_heavy_cut",
+    "crop_width": 608,
+    "crop_height": 1080,
+    "source_resolution": {"width": 1920, "height": 1080},
+    "target_resolution": {"width": 1080, "height": 1920},
+    "smoothing_method": "exponential",
+    "smoothing_strength": 0.82,
+    "max_velocity_px_per_second": 700.0,
+    "max_acceleration_px_per_second2": 1600.0,
+    "dead_zone_px": 80.0,
+    "easing": "easeInOutCubic",
+    "keyframes": [
+        {"frame_index": 0, "t": 0.0, "x": 660.0, "y": 0.0, "confidence": 0.9, "smoothed": true},
+        {"frame_index": 60, "t": 6.0, "x": 700.0, "y": 0.0, "confidence": 0.9, "smoothed": true},
+        {"frame_index": 180, "t": 18.0, "x": 660.0, "y": 0.0, "confidence": 0.9, "smoothed": true},
+        {"frame_index": 260, "t": 26.0, "x": 740.0, "y": 0.0, "confidence": 0.9, "smoothed": true},
+        {"frame_index": 380, "t": 38.0, "x": 660.0, "y": 0.0, "confidence": 0.9, "smoothed": true},
+        {"frame_index": 440, "t": 44.0, "x": 800.0, "y": 0.0, "confidence": 0.9, "smoothed": true},
+        {"frame_index": 600, "t": 60.0, "x": 660.0, "y": 0.0, "confidence": 0.9, "smoothed": true}
+    ]
+}

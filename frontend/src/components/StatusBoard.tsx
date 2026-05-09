@@ -1,6 +1,9 @@
 import {
-  STEP_ORDER,
+  PHASE_1_STEP_ORDER,
+  type PipelineSummary,
   type ServiceStatus,
+  type StepName,
+  type StepState,
   type StepStatus,
 } from "@/lib/types";
 
@@ -11,7 +14,35 @@ const STATUS_BADGE: Record<StepStatus, string> = {
   failed: "border-red-800 bg-red-950/60 text-red-200",
 };
 
-export function StatusBoard({ status }: { status: ServiceStatus }) {
+const PHASE_2_ONLY_STEPS = new Set<StepName>([
+  "audio_extraction",
+  "voice_activity_detection",
+  "dead_air_cut_planning",
+]);
+
+const PHASE_3_ONLY_STEPS = new Set<StepName>([
+  "audio_enhancement",
+  "transcription",
+]);
+
+const DEFAULT_STEP_STATE: StepState = {
+  status: "pending",
+  started_at: null,
+  finished_at: null,
+};
+
+export function StatusBoard({
+  status,
+  pipeline,
+}: {
+  status: ServiceStatus;
+  pipeline?: PipelineSummary;
+}) {
+  const steps =
+    pipeline?.steps && pipeline.steps.length > 0
+      ? pipeline.steps
+      : PHASE_1_STEP_ORDER;
+
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -23,6 +54,12 @@ export function StatusBoard({ status }: { status: ServiceStatus }) {
         >
           {status.status}
         </span>
+        {pipeline?.pipeline_id ? (
+          <span className="rounded-full border border-zinc-700 bg-zinc-900 px-2 py-0.5 font-mono text-[11px] text-zinc-400">
+            {pipeline.pipeline_id}
+          </span>
+        ) : null}
+        <span className="text-xs text-zinc-500">{steps.length} steps</span>
         {status.current_step ? (
           <span className="text-xs text-zinc-500">
             current:{" "}
@@ -37,9 +74,10 @@ export function StatusBoard({ status }: { status: ServiceStatus }) {
       </div>
 
       <ol className="space-y-2">
-        {STEP_ORDER.map((step, index) => {
-          const state = status.steps[step];
+        {steps.map((step, index) => {
+          const state = status.steps[step] ?? DEFAULT_STEP_STATE;
           const isCurrent = status.current_step === step;
+          const isPhase2Step = PHASE_2_ONLY_STEPS.has(step);
           return (
             <li
               key={step}
@@ -52,6 +90,16 @@ export function StatusBoard({ status }: { status: ServiceStatus }) {
                   {String(index + 1).padStart(2, "0")}
                 </span>
                 <span className="font-mono text-sm">{step}</span>
+                {isPhase2Step ? (
+                  <span className="rounded-full border border-violet-800 bg-violet-950/40 px-1.5 py-0 text-[10px] font-medium uppercase tracking-wider text-violet-200">
+                    audio
+                  </span>
+                ) : null}
+                {PHASE_3_ONLY_STEPS.has(step) ? (
+                  <span className="rounded-full border border-amber-800 bg-amber-950/40 px-1.5 py-0 text-[10px] font-medium uppercase tracking-wider text-amber-200">
+                    quality
+                  </span>
+                ) : null}
               </div>
               <div className="flex flex-wrap items-center gap-3 text-xs">
                 <span className="font-medium uppercase tracking-wider">

@@ -338,49 +338,49 @@ Done when:
 
 รายการนี้เป็น Markdown task list สำหรับติ๊กสถานะ — เปลี่ยน `[ ]` เป็น `[x]` เมื่อเสร็จ ลำดับ ID ต่อจาก Phase 1 ตาม lane เดิม + lane ใหม่ J/K/L
 
-- [ ] P2-A01: Bump contracts สำหรับ Phase 2 — เพิ่ม `pipeline_id = "phase2_smooth_reframe_dead_air_cut"`, ขยาย `pipeline.steps` array, เพิ่ม `enabled_features.remove_dead_air` ใน `job_manifest.schema.json`, schema_version `2.0.0`
+- [x] P2-A01: Bump contracts สำหรับ Phase 2 — เพิ่ม `pipeline_id = "phase2_smooth_reframe_dead_air_cut"`, ขยาย `pipeline.steps` array, เพิ่ม `enabled_features.remove_dead_air` ใน `job_manifest.schema.json`, schema_version `2.0.0`
   Owner: Orchestrator | Write Scope: `contracts/` เท่านั้น | Depends on: P1-A01 | Deliverable: schema + sample manifest ใหม่ใน `contracts/examples/`
-- [ ] P2-A02: ขยาย `artifact_manifest.schema.json` — เพิ่ม artifact key `extracted_audio`, `vad_segments`, `cut_plan` พร้อม pattern + producer
+- [x] P2-A02: ขยาย `artifact_manifest.schema.json` — เพิ่ม artifact key `extracted_audio`, `vad_segments`, `cut_plan` พร้อม pattern + producer
   Owner: Orchestrator | Write Scope: `contracts/` เท่านั้น | Depends on: P2-A01 | Deliverable: schema ใหม่ + sample artifact manifest
-- [ ] P2-A03: ขยาย `path_resolver.py` และ `artifact_helper.py` ให้รู้จัก artifact key ใหม่ 3 ตัว
+- [x] P2-A03: ขยาย `path_resolver.py` และ `artifact_helper.py` ให้รู้จัก artifact key ใหม่ 3 ตัว
   Owner: Orchestrator | Write Scope: `orchestrator/` เท่านั้น | Depends on: P2-A02 | Deliverable: helper อ่าน/เขียน 3 artifact ใหม่ + tests
-- [ ] P2-A04: ขยาย `HttpPipelineRunner` + `MockPipelineRunner` ให้รู้ pipeline 12 step ใหม่ และ route service URL ใหม่ 3 ตัว
+- [x] P2-A04: ขยาย `HttpPipelineRunner` + `MockPipelineRunner` ให้รู้ pipeline 12 step ใหม่ และ route service URL ใหม่ 3 ตัว
   Owner: Orchestrator | Write Scope: `orchestrator/` เท่านั้น | Depends on: P2-A01, P2-A02 | Deliverable: runner รัน 12 step ตามลำดับ + integration test
-- [ ] P2-A05: ขยาย `ORCHESTRATOR_SERVICE_ENDPOINTS` env + `scripts/start_local_stack.sh` ให้ start service ใหม่ 3 ตัวบน `127.0.0.1:8019–8021`
+- [x] P2-A05: ขยาย `ORCHESTRATOR_SERVICE_ENDPOINTS` env + `scripts/start_local_stack.sh` ให้ start service ใหม่ 3 ตัวบน `127.0.0.1:8019–8021`
   Owner: Orchestrator | Write Scope: `scripts/`, README, env config | Depends on: P2-J02, P2-K02, P2-L02 | Deliverable: รัน `./scripts/start_local_stack.sh` แล้วได้ 12 service บน localhost
-- [ ] P2-J01: ทำ Audio Extraction Service skeleton (`/run` endpoint)
+- [x] P2-J01: ทำ Audio Extraction Service skeleton (`/run` endpoint)
   Owner: Audio | Write Scope: `services/audio_extraction/` เท่านั้น | Depends on: P2-A02 | Deliverable: FastAPI `/run` ที่อ่าน source key จาก manifest, mock ก่อน
-- [ ] P2-J02: ทำ ffmpeg audio extraction จริงเขียน WAV mono 16 kHz
+- [x] P2-J02: ทำ ffmpeg audio extraction จริงเขียน WAV mono 16 kHz
   Owner: Audio | Write Scope: `services/audio_extraction/` เท่านั้น | Depends on: P2-J01 | Deliverable: `extracted_audio.wav` ใช้ได้ + tests
-- [ ] P2-K01: ทำ Voice Activity Detection Service skeleton + เลือก backend (Silero VAD)
+- [x] P2-K01: ทำ Voice Activity Detection Service skeleton + เลือก backend (Silero VAD)
   Owner: Audio AI | Write Scope: `services/voice_activity_detection/` เท่านั้น | Depends on: P2-A02, P2-J02 | Deliverable: skeleton + Silero pinned ใน `requirements.txt`
-- [ ] P2-K02: ทำ VAD จริง emit `vad_segments.json` ครอบคลุมทั้ง duration
+- [x] P2-K02: ทำ VAD จริง emit `vad_segments.json` ครอบคลุมทั้ง duration
   Owner: Audio AI | Write Scope: `services/voice_activity_detection/` เท่านั้น | Depends on: P2-K01 | Deliverable: artifact + tests + log
-- [ ] P2-K03: tuning threshold + handle edge case (วิดีโอเงียบทั้งคลิป, วิดีโอพูดทั้งคลิป)
+- [x] P2-K03: tuning threshold + handle edge case (วิดีโอเงียบทั้งคลิป, วิดีโอพูดทั้งคลิป)
   Owner: Audio AI | Write Scope: `services/voice_activity_detection/` เท่านั้น | Depends on: P2-K02 | Deliverable: warning policy + test fixtures 3 แบบ
-- [ ] P2-L01: ทำ Dead Air Cut Planning Service skeleton
+- [x] P2-L01: ทำ Dead Air Cut Planning Service skeleton
   Owner: Timeline/Feature | Write Scope: `services/dead_air_cut_planning/` เท่านั้น | Depends on: P2-A02 | Deliverable: FastAPI `/run` skeleton
-- [ ] P2-L02: implement cut planning algorithm — threshold + padding + merge + min keep duration
+- [x] P2-L02: implement cut planning algorithm — threshold + padding + merge + min keep duration
   Owner: Timeline/Feature | Write Scope: `services/dead_air_cut_planning/` เท่านั้น | Depends on: P2-K02, P2-L01 | Deliverable: `cut_plan.json` + tests ครอบคลุม edge case (silence ทั้งคลิป, ไม่มี silence, padding ทับกัน, segment สั้นเกิน)
-- [ ] P2-L03: identity mode + metrics ครบ (`total_removed_seconds`, `cut_count`, `compression_ratio`)
+- [x] P2-L03: identity mode + metrics ครบ (`total_removed_seconds`, `cut_count`, `compression_ratio`)
   Owner: Timeline/Feature | Write Scope: `services/dead_air_cut_planning/` เท่านั้น | Depends on: P2-L02 | Deliverable: feature off → identity plan, feature on → metrics ตรงกับการ verify ด้วย ffprobe
-- [ ] P2-H04: ขยาย Render Plan Compiler รองรับ `compiler_render_mode = smooth_crop_with_cuts`
+- [x] P2-H04: ขยาย Render Plan Compiler รองรับ `compiler_render_mode = smooth_crop_with_cuts`
   Owner: Renderer | Write Scope: `services/render_plan_compiler/` เท่านั้น | Depends on: P2-L02, P1-H01 | Deliverable: render_plan ใหม่ที่มี `segments[]` + interpolate crop ที่ขอบ
-- [ ] P2-H05: ขยาย FFmpeg Renderer ทำ trim + crop ต่อ segment + concat + mux เสียงในรอบเดียว
+- [x] P2-H05: ขยาย FFmpeg Renderer ทำ trim + crop ต่อ segment + concat + mux เสียงในรอบเดียว
   Owner: Renderer | Write Scope: `services/ffmpeg_renderer/` เท่านั้น | Depends on: P2-H04, P1-H03 | Deliverable: output `final_9x16.mp4` ที่ตัด dead air + reframed
-- [ ] P2-H06: ตรวจ A/V sync ของ output — สร้าง smoke test ว่า audio sample boundary ตรงกับ video frame boundary หลัง concat
+- [x] P2-H06: ตรวจ A/V sync ของ output — สร้าง smoke test ว่า audio sample boundary ตรงกับ video frame boundary หลัง concat
   Owner: Renderer | Write Scope: `services/ffmpeg_renderer/tests/` เท่านั้น | Depends on: P2-H05 | Deliverable: test ที่ fail ถ้ามี desync > 1 frame
-- [ ] P2-B04: เพิ่ม toggle `Remove dead air` + `silence_threshold_seconds` ในหน้า upload
+- [x] P2-B04: เพิ่ม toggle `Remove dead air` + `silence_threshold_seconds` ในหน้า upload
   Owner: Frontend | Write Scope: `frontend/` เท่านั้น | Depends on: P2-A01 | Deliverable: UI ส่ง `enabled_features.remove_dead_air` + config เข้า create job
-- [ ] P2-B05: รองรับ pipeline 12 step ในหน้า status — แสดง 3 step ใหม่ + artifacts ใหม่ 3 ตัว
+- [x] P2-B05: รองรับ pipeline 12 step ในหน้า status — แสดง 3 step ใหม่ + artifacts ใหม่ 3 ตัว
   Owner: Frontend | Write Scope: `frontend/` เท่านั้น | Depends on: P2-A02, P2-B04 | Deliverable: หน้า status ดู step ใหม่ได้, ดาวน์โหลด `extracted_audio.wav`, ดู `vad_segments.json` / `cut_plan.json`
-- [ ] P2-B06: timeline visualizer แสดง keep/removed segment จาก `cut_plan.json` + metric (kept/removed/ratio)
+- [x] P2-B06: timeline visualizer แสดง keep/removed segment จาก `cut_plan.json` + metric (kept/removed/ratio)
   Owner: Frontend | Write Scope: `frontend/` เท่านั้น | Depends on: P2-L02, P2-B05 | Deliverable: bar chart หรือ track view เรียงตาม source timeline
-- [ ] P2-I04: sample fixture ของ Phase 2 — vad_segments + cut_plan + render_plan ตัวอย่าง 3 แบบ (ตัดเยอะ, ตัดน้อย, ไม่ตัด)
+- [x] P2-I04: sample fixture ของ Phase 2 — vad_segments + cut_plan + render_plan ตัวอย่าง 3 แบบ (ตัดเยอะ, ตัดน้อย, ไม่ตัด)
   Owner: QA/Integration | Write Scope: `fixtures/` เท่านั้น | Depends on: P2-A02 | Deliverable: ไฟล์ fixture ที่ผ่าน schema validation
-- [ ] P2-I05: integration test ของ pipeline 12 step ด้วย mock services
+- [x] P2-I05: integration test ของ pipeline 12 step ด้วย mock services
   Owner: QA/Integration | Write Scope: integration test เท่านั้น | Depends on: P2-A04, P2-I04 | Deliverable: pipeline วิ่งครบ + assert artifact crud
-- [ ] P2-I06: end-to-end test ด้วยวิดีโอจริงสั้น ๆ (มี silence ที่ตั้งใจ) → assert duration output ตรงกับ `total_kept_seconds`
+- [x] P2-I06: end-to-end test ด้วยวิดีโอจริงสั้น ๆ (มี silence ที่ตั้งใจ) → assert duration output ตรงกับ `total_kept_seconds`
   Owner: QA/Integration | Write Scope: integration test เท่านั้น | Depends on: P2-H05, P2-I04 | Deliverable: e2e ผ่าน acceptance criteria
 
 ### Dependency กลางของ Phase 2

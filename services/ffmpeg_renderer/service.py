@@ -1,4 +1,16 @@
-"""Render final 9:16 MP4 from render_plan.json using FFmpeg."""
+"""Render the final 9:16 MP4 from ``render_plan.json`` using FFmpeg.
+
+Phase 1 supports two modes:
+
+- ``static_crop``: single keyframe → one ffmpeg pass with ``crop`` + ``scale``.
+- ``smooth_crop``: keyframe-per-window → multiple ffmpeg passes followed by
+  concat demuxer and audio mux.
+
+Phase 2 adds ``smooth_crop_with_cuts``: each ``segment`` from ``render_plan.
+segments`` becomes a trim window with its own per-segment crop keyframes; all
+trimmed/cropped clips are concatenated and the source audio is sliced to match
+the kept ranges so audio stays in sync with video after dead-air removal.
+"""
 
 from __future__ import annotations
 
@@ -68,7 +80,18 @@ class FFmpegRendererService:
             out_path = Path(tmp) / "out.mp4"
             src_path.write_bytes(source_bytes)
 
-            if render_mode == "smooth_crop":
+            if render_mode == "smooth_crop_with_cuts":
+                self._render_with_cuts(
+                    src_path=src_path,
+                    out_path=out_path,
+                    plan=plan,
+                    crop_w_e=crop_w_e,
+                    crop_h_e=crop_h_e,
+                    target_w=tw,
+                    target_h=th,
+                    ffmpeg_config=ffmpeg_config,
+                )
+            elif render_mode == "smooth_crop":
                 self._render_smooth_segments(
                     src_path=src_path,
                     out_path=out_path,
@@ -128,10 +151,8 @@ class FFmpegRendererService:
         audio_policy: str,
     ) -> None:
         first = keyframes[0]
-        cx = int(round(float(first.get("x") or 0.0)))
-        cy = int(round(float(first.get("y") or 0.0)))
-        cx = max(0, cx)
-        cy = max(0, cy)
+        cx = max(0, int(round(float(first.get("x") or 0.0))))
+        cy = max(0, int(round(float(first.get("y") or 0.0))))
 
         probe = probe_video_bytes(source_bytes)
         video_codec = str(ffmpeg_config.get("video_codec") or "libx264")
@@ -188,80 +209,232 @@ class FFmpegRendererService:
         if duration <= 0:
             raise ValueError("smooth_crop requires metadata.duration")
 
-        video_codec = str(ffmpeg_config.get("video_codec") or "libx264")
-        audio_codec = str(ffmpeg_config.get("audio_codec") or "aac")
-        audio_policy = str(plan.get("audio_policy") or "copy_if_possible_else_aac")
-
         sorted_kf: list[dict[str, Any]] = sorted(
             keyframes,
             key=lambda k: float(k.get("t") or 0.0),
         )
-
-        temp_root = out_path.parent
-        segment_paths: list[Path] = []
-        concat_list = temp_root / "concat.txt"
-
+        windows: list[tuple[float, float, dict[str, Any]]] = []
         for index in range(len(sorted_kf)):
-            seg_out = temp_root / f"seg_{index:04d}.mp4"
             t_start = float(sorted_kf[index].get("t") or 0.0)
-            if index + 1 < len(sorted_kf):
-                t_end = float(sorted_kf[index + 1].get("t") or duration)
-            else:
-                t_end = duration
-            seg_duration = max(0.001, t_end - t_start)
+            t_end = float(sorted_kf[index + 1].get("t") or duration) if index + 1 < len(sorted_kf) else duration
+            windows.append((t_start, t_end, sorted_kf[index]))
 
-            cx = int(round(float(sorted_kf[index].get("x") or 0.0)))
-            cy = int(round(float(sorted_kf[index].get("y") or 0.0)))
-            cx = max(0, cx)
-            cy = max(0, cy)
+        single_window = [
+            {
+                "source_start": 0.0,
+                "source_end": duration,
+                "windows": windows,
+            }
+        ]
 
-            vf = f"crop={crop_w_e}:{crop_h_e}:{cx}:{cy},scale={target_w}:{target_h}"
+        self._render_keep_segments(
+            src_path=src_path,
+            out_path=out_path,
+            keep_segments=single_window,
+            crop_w_e=crop_w_e,
+            crop_h_e=crop_h_e,
+            target_w=target_w,
+            target_h=target_h,
+            ffmpeg_config=ffmpeg_config,
+            audio_policy=str(plan.get("audio_policy") or "copy_if_possible_else_aac"),
+            mux_full_audio=True,
+        )
 
-            cmd = [
-                "ffmpeg",
-                "-y",
-                "-ss",
-                f"{t_start:.6f}",
-                "-i",
-                str(src_path),
-                "-t",
-                f"{seg_duration:.6f}",
-                "-vf",
-                vf,
-                "-c:v",
-                video_codec,
-                "-preset",
-                "fast",
-                "-crf",
-                "23",
-                "-pix_fmt",
-                "yuv420p",
-                "-an",
-                str(seg_out),
-            ]
-            self._run_ffmpeg(cmd)
-            segment_paths.append(seg_out)
+    def _render_with_cuts(
+        self,
+        *,
+        src_path: Path,
+        out_path: Path,
+        plan: dict[str, Any],
+        crop_w_e: int,
+        crop_h_e: int,
+        target_w: int,
+        target_h: int,
+        ffmpeg_config: dict[str, Any],
+    ) -> None:
+        segments = plan.get("segments") or []
+        if not isinstance(segments, list) or not segments:
+            raise ValueError("smooth_crop_with_cuts requires a non-empty segments list in render_plan")
 
-        if not segment_paths:
-            raise ValueError("smooth_crop produced no segments")
+        crop_plan = plan.get("crop_plan") or {}
+        sorted_global_kf = sorted(
+            crop_plan.get("keyframes") or [],
+            key=lambda k: float(k.get("t") or 0.0),
+        )
 
-        if len(segment_paths) == 1:
-            shutil.move(segment_paths[0], out_path)
+        keep_segments: list[dict[str, Any]] = []
+        for segment in segments:
+            seg_start = float(segment.get("source_start") or 0.0)
+            seg_end = float(segment.get("source_end") or 0.0)
+            if seg_end <= seg_start:
+                continue
+
+            seg_keyframes = segment.get("crop_keyframes") or []
+            if not seg_keyframes:
+                seg_keyframes = _keyframes_for_window(sorted_global_kf, seg_start, seg_end)
+            windows = _windows_from_segment_keyframes(seg_keyframes, seg_end - seg_start)
+            keep_segments.append(
+                {
+                    "source_start": seg_start,
+                    "source_end": seg_end,
+                    "windows": windows,
+                }
+            )
+
+        if not keep_segments:
+            raise ValueError("smooth_crop_with_cuts collapsed all segments to zero duration")
+
+        self._render_keep_segments(
+            src_path=src_path,
+            out_path=out_path,
+            keep_segments=keep_segments,
+            crop_w_e=crop_w_e,
+            crop_h_e=crop_h_e,
+            target_w=target_w,
+            target_h=target_h,
+            ffmpeg_config=ffmpeg_config,
+            audio_policy=str(plan.get("audio_policy") or "copy_if_possible_else_aac"),
+            mux_full_audio=False,
+        )
+
+    def _render_keep_segments(
+        self,
+        *,
+        src_path: Path,
+        out_path: Path,
+        keep_segments: list[dict[str, Any]],
+        crop_w_e: int,
+        crop_h_e: int,
+        target_w: int,
+        target_h: int,
+        ffmpeg_config: dict[str, Any],
+        audio_policy: str,
+        mux_full_audio: bool,
+    ) -> None:
+        video_codec = str(ffmpeg_config.get("video_codec") or "libx264")
+        audio_codec = str(ffmpeg_config.get("audio_codec") or "aac")
+        temp_root = out_path.parent
+
+        sub_segments: list[Path] = []
+        audio_segments: list[Path] = []
+        probe = probe_video_bytes(src_path.read_bytes())
+        has_audio = _has_audio_stream(probe)
+
+        for keep_index, keep in enumerate(keep_segments):
+            keep_start = float(keep["source_start"])
+            for window_index, (rel_start, rel_end, kf) in enumerate(keep["windows"]):
+                seg_path = temp_root / f"keep_{keep_index:04d}_win_{window_index:04d}.mp4"
+                window_duration = max(0.001, rel_end - rel_start)
+                source_window_start = keep_start + rel_start
+
+                cx = max(0, int(round(float(kf.get("x") or 0.0))))
+                cy = max(0, int(round(float(kf.get("y") or 0.0))))
+                vf = f"crop={crop_w_e}:{crop_h_e}:{cx}:{cy},scale={target_w}:{target_h}"
+
+                cmd = [
+                    "ffmpeg",
+                    "-y",
+                    "-ss",
+                    f"{source_window_start:.6f}",
+                    "-i",
+                    str(src_path),
+                    "-t",
+                    f"{window_duration:.6f}",
+                    "-vf",
+                    vf,
+                    "-c:v",
+                    video_codec,
+                    "-preset",
+                    "fast",
+                    "-crf",
+                    "23",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-an",
+                    str(seg_path),
+                ]
+                self._run_ffmpeg(cmd)
+                sub_segments.append(seg_path)
+
+            if not mux_full_audio and has_audio:
+                audio_seg_path = temp_root / f"keep_{keep_index:04d}.audio.m4a"
+                seg_duration = float(keep["source_end"]) - keep_start
+                audio_args = ["-c:a", audio_codec, "-b:a", "192k"] if audio_policy == "aac_transcode" else ["-c:a", "copy"]
+                cmd = [
+                    "ffmpeg",
+                    "-y",
+                    "-ss",
+                    f"{keep_start:.6f}",
+                    "-i",
+                    str(src_path),
+                    "-t",
+                    f"{seg_duration:.6f}",
+                    "-vn",
+                    *audio_args,
+                    str(audio_seg_path),
+                ]
+                self._run_ffmpeg(cmd)
+                audio_segments.append(audio_seg_path)
+
+        if not sub_segments:
+            raise ValueError("renderer produced no video sub-segments")
+
+        video_only_path = temp_root / "video_only.mp4"
+        self._concat_video(sub_segments, video_only_path)
+
+        if mux_full_audio:
+            shutil.move(video_only_path, out_path)
             self._mux_audio_if_needed(
                 src_path=src_path,
                 video_path=out_path,
                 audio_policy=audio_policy,
                 audio_codec=audio_codec,
-                probe=probe_video_bytes(src_path.read_bytes()),
+                probe=probe,
             )
             return
 
-        concat_list.write_text(
-            "".join(f"file '{p.as_posix()}'\n" for p in segment_paths),
+        if not audio_segments or not has_audio:
+            shutil.move(video_only_path, out_path)
+            return
+
+        concat_audio_path = temp_root / "audio_only.m4a"
+        self._concat_audio(audio_segments, concat_audio_path)
+
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(video_only_path),
+            "-i",
+            str(concat_audio_path),
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-shortest",
+            "-c:v",
+            "copy",
+            "-c:a",
+            audio_codec,
+            "-b:a",
+            "192k",
+            "-movflags",
+            "+faststart",
+            str(out_path),
+        ]
+        self._run_ffmpeg(cmd)
+
+    def _concat_video(self, segments: list[Path], out_path: Path) -> None:
+        if len(segments) == 1:
+            shutil.copy2(segments[0], out_path)
+            return
+
+        list_path = out_path.parent / f"{out_path.stem}_concat.txt"
+        list_path.write_text(
+            "".join(f"file '{p.as_posix()}'\n" for p in segments),
             encoding="utf-8",
         )
-        concat_out = temp_root / "concat_noaudio.mp4"
-        concat_cmd = [
+        cmd = [
             "ffmpeg",
             "-y",
             "-f",
@@ -269,21 +442,37 @@ class FFmpegRendererService:
             "-safe",
             "0",
             "-i",
-            str(concat_list),
+            str(list_path),
             "-c",
             "copy",
-            str(concat_out),
+            str(out_path),
         ]
-        self._run_ffmpeg(concat_cmd)
-        shutil.move(concat_out, out_path)
+        self._run_ffmpeg(cmd)
 
-        self._mux_audio_if_needed(
-            src_path=src_path,
-            video_path=out_path,
-            audio_policy=audio_policy,
-            audio_codec=audio_codec,
-            probe=probe_video_bytes(src_path.read_bytes()),
+    def _concat_audio(self, segments: list[Path], out_path: Path) -> None:
+        if len(segments) == 1:
+            shutil.copy2(segments[0], out_path)
+            return
+
+        list_path = out_path.parent / f"{out_path.stem}_concat.txt"
+        list_path.write_text(
+            "".join(f"file '{p.as_posix()}'\n" for p in segments),
+            encoding="utf-8",
         )
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(list_path),
+            "-c",
+            "copy",
+            str(out_path),
+        ]
+        self._run_ffmpeg(cmd)
 
     def _mux_audio_if_needed(
         self,
@@ -328,3 +517,48 @@ class FFmpegRendererService:
         if completed.returncode != 0:
             detail = completed.stderr.strip() or completed.stdout.strip() or "ffmpeg failed"
             raise ValueError(detail)
+
+
+def _windows_from_segment_keyframes(
+    keyframes: list[dict[str, Any]],
+    segment_duration: float,
+) -> list[tuple[float, float, dict[str, Any]]]:
+    """Convert per-segment crop keyframes into ``(rel_start, rel_end, kf)`` windows."""
+    if not keyframes:
+        return [(0.0, segment_duration, {"x": 0.0, "y": 0.0})]
+
+    sorted_kf = sorted(keyframes, key=lambda k: float(k.get("t") or 0.0))
+    windows: list[tuple[float, float, dict[str, Any]]] = []
+    for index in range(len(sorted_kf)):
+        rel_start = float(sorted_kf[index].get("t") or 0.0)
+        if index + 1 < len(sorted_kf):
+            rel_end = float(sorted_kf[index + 1].get("t") or segment_duration)
+        else:
+            rel_end = segment_duration
+        if rel_end > rel_start:
+            windows.append((rel_start, rel_end, sorted_kf[index]))
+
+    if not windows:
+        windows.append((0.0, segment_duration, sorted_kf[0]))
+    return windows
+
+
+def _keyframes_for_window(
+    keyframes: list[dict[str, Any]],
+    start: float,
+    end: float,
+) -> list[dict[str, Any]]:
+    if not keyframes:
+        return []
+
+    inside = [kf for kf in keyframes if start <= float(kf.get("t") or 0.0) <= end]
+    rebased = [
+        {**kf, "t": round(float(kf.get("t") or 0.0) - start, 6)}
+        for kf in inside
+    ]
+    if rebased and rebased[0]["t"] > 0.0:
+        rebased.insert(0, {**rebased[0], "t": 0.0})
+    if not rebased:
+        nearest = min(keyframes, key=lambda kf: abs(float(kf.get("t") or 0.0) - start))
+        rebased = [{**nearest, "t": 0.0}]
+    return rebased

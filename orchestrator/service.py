@@ -10,11 +10,15 @@ from typing import Any
 from uuid import uuid4
 
 from .artifact_helper import ArtifactHelper
+from .contracts import ARTIFACT_CONTENT_TYPES
+from .contracts import PHASE_1_PIPELINE_ID
+from .contracts import PHASE_2_PIPELINE_ID
+from .contracts import PHASE_3_PIPELINE_ID
+from .contracts import PIPELINE_STEPS_BY_ID
 from .contracts import repo_root
 from .manifest_manager import ManifestManager
 from .manifest_manager import utc_now
 from .object_store import ObjectStore
-from .contracts import ARTIFACT_CONTENT_TYPES
 from .path_resolver import input_path
 from .path_resolver import job_prefix
 from .path_resolver import manifest_path
@@ -24,6 +28,13 @@ from .path_resolver import validate_job_id
 from .pipeline_runner import HttpPipelineRunner
 from .pipeline_runner import MockPipelineRunner
 from .pipeline_runner import PipelineRunner
+
+
+_JOB_MANIFEST_TEMPLATES_BY_PIPELINE_ID = {
+    PHASE_1_PIPELINE_ID: "contracts/examples/job_manifest.sample.json",
+    PHASE_2_PIPELINE_ID: "contracts/examples/job_manifest.phase2.sample.json",
+    PHASE_3_PIPELINE_ID: "contracts/examples/job_manifest.phase3.sample.json",
+}
 
 
 class OrchestratorService:
@@ -38,7 +49,15 @@ class OrchestratorService:
         self.manifest_manager = ManifestManager(store)
         self.artifact_helper = ArtifactHelper(store, self.manifest_manager)
         self.runner = runner or _build_default_runner()
-        self.job_manifest_template = job_manifest_template or _load_job_manifest_template()
+        self.job_manifest_templates: dict[str, dict[str, Any]] = {
+            pipeline_id: _load_job_manifest_template(path)
+            for pipeline_id, path in _JOB_MANIFEST_TEMPLATES_BY_PIPELINE_ID.items()
+        }
+        if job_manifest_template is not None:
+            override_pipeline_id = job_manifest_template.get("pipeline", {}).get(
+                "pipeline_id", PHASE_1_PIPELINE_ID
+            )
+            self.job_manifest_templates[override_pipeline_id] = job_manifest_template
 
     def create_job(
         self,
@@ -48,21 +67,30 @@ class OrchestratorService:
         content_type: str = "video/mp4",
         created_by: str = "debug_frontend",
         job_id: str | None = None,
+        pipeline_id: str = PHASE_1_PIPELINE_ID,
+        enabled_features: dict[str, bool] | None = None,
     ) -> dict[str, Any]:
         if not source_bytes:
             raise ValueError("source_bytes must not be empty.")
+        if pipeline_id not in PIPELINE_STEPS_BY_ID:
+            allowed = ", ".join(sorted(PIPELINE_STEPS_BY_ID))
+            raise ValueError(
+                f"Unknown pipeline_id '{pipeline_id}'. Expected one of: {allowed}."
+            )
 
         created_at = utc_now()
         resolved_job_id = validate_job_id(job_id or f"job_{uuid4().hex[:12]}")
         resolved_filename = original_filename or "source.mp4"
 
         job_manifest = self._build_job_manifest(
+            pipeline_id=pipeline_id,
             job_id=resolved_job_id,
             created_at=created_at,
             created_by=created_by,
             original_filename=resolved_filename,
             content_type=content_type,
             checksum_sha256=hashlib.sha256(source_bytes).hexdigest(),
+            enabled_features_overrides=enabled_features,
         )
 
         self.artifact_helper.upload_source_video(
@@ -77,10 +105,17 @@ class OrchestratorService:
         resolved_job_id = validate_job_id(job_id)
         service_status = self.manifest_manager.read_service_status(resolved_job_id)
         artifact_manifest = self.manifest_manager.read_artifact_manifest(resolved_job_id)
+        job_manifest = self.manifest_manager.read_job_manifest(resolved_job_id)
+        pipeline = job_manifest.get("pipeline", {})
         return {
             "job_id": resolved_job_id,
             "service_status": service_status,
             "artifacts": artifact_manifest["artifacts"],
+            "pipeline": {
+                "pipeline_id": pipeline.get("pipeline_id", PHASE_1_PIPELINE_ID),
+                "steps": pipeline.get("steps", []),
+            },
+            "enabled_features": job_manifest.get("enabled_features", {}),
             "paths": {
                 "job_prefix": job_prefix(resolved_job_id),
                 "input": input_path(resolved_job_id),
@@ -121,14 +156,21 @@ class OrchestratorService:
     def _build_job_manifest(
         self,
         *,
+        pipeline_id: str,
         job_id: str,
         created_at: str,
         created_by: str,
         original_filename: str,
         content_type: str,
         checksum_sha256: str,
+        enabled_features_overrides: dict[str, bool] | None = None,
     ) -> dict[str, Any]:
-        manifest = deepcopy(self.job_manifest_template)
+        template = self.job_manifest_templates.get(pipeline_id)
+        if template is None:
+            raise ValueError(
+                f"No job manifest template registered for pipeline_id '{pipeline_id}'."
+            )
+        manifest = deepcopy(template)
         manifest["job_id"] = job_id
         manifest["created_at"] = created_at
         manifest["created_by"] = created_by
@@ -138,12 +180,63 @@ class OrchestratorService:
         manifest["input"]["source_video"]["content_type"] = content_type
         manifest["input"]["source_video"]["checksum_sha256"] = checksum_sha256
         manifest["target_output"]["object_key"] = output_path(job_id)
+
+        if enabled_features_overrides:
+            existing = manifest.get("enabled_features")
+            if not isinstance(existing, dict):
+                existing = {}
+            for feature_key, value in enabled_features_overrides.items():
+                if value:
+                    existing[feature_key] = True
+                else:
+                    existing.pop(feature_key, None)
+            manifest["enabled_features"] = existing
+
         return manifest
 
 
-def _load_job_manifest_template() -> dict[str, Any]:
-    template_path = repo_root() / "contracts" / "examples" / "job_manifest.sample.json"
+def _load_job_manifest_template(relative_path: str) -> dict[str, Any]:
+    template_path = repo_root() / relative_path
     return json.loads(template_path.read_text(encoding="utf-8"))
+
+
+_DEFAULT_STEP_TIMEOUTS_SECONDS: dict[str, float] = {
+    "audio_enhancement": 600.0,
+    "voice_activity_detection": 600.0,
+    "transcription": 1800.0,
+    "body_detection": 900.0,
+    "ffmpeg_renderer": 1800.0,
+    "proxy_frame_sampling": 600.0,
+}
+
+
+def _parse_step_timeouts_env() -> dict[str, float]:
+    raw = os.getenv("ORCHESTRATOR_STEP_TIMEOUTS_JSON")
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            "ORCHESTRATOR_STEP_TIMEOUTS_JSON must be a JSON object mapping step IDs to timeout seconds."
+        ) from exc
+    if not isinstance(parsed, dict):
+        raise RuntimeError(
+            "ORCHESTRATOR_STEP_TIMEOUTS_JSON must be a JSON object mapping step IDs to timeout seconds."
+        )
+    overrides: dict[str, float] = {}
+    for step_id, value in parsed.items():
+        if not isinstance(step_id, str):
+            raise RuntimeError(
+                "ORCHESTRATOR_STEP_TIMEOUTS_JSON keys must be step ID strings."
+            )
+        try:
+            overrides[step_id] = float(value)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"ORCHESTRATOR_STEP_TIMEOUTS_JSON value for '{step_id}' must be a number."
+            ) from exc
+    return overrides
 
 
 def _build_default_runner() -> PipelineRunner:
@@ -166,7 +259,11 @@ def _build_default_runner() -> PipelineRunner:
             "ORCHESTRATOR_SERVICE_ENDPOINTS must be a JSON object mapping step IDs to service URLs."
         )
 
+    step_timeouts: dict[str, float] = dict(_DEFAULT_STEP_TIMEOUTS_SECONDS)
+    step_timeouts.update(_parse_step_timeouts_env())
+
     return HttpPipelineRunner(
         service_endpoints=service_endpoints,
         minio_bucket=os.getenv("ORCHESTRATOR_MINIO_BUCKET", "smart-cut"),
+        step_timeouts_seconds=step_timeouts,
     )

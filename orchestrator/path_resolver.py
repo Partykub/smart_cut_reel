@@ -1,4 +1,4 @@
-"""Canonical MinIO path resolution for Phase 1 orchestrator flows."""
+"""Canonical MinIO path resolution for orchestrator flows (Phase 1 + Phase 2 + Phase 3)."""
 
 from __future__ import annotations
 
@@ -16,6 +16,11 @@ _MANIFEST_FILENAMES = {
 
 _ARTIFACT_OBJECT_SUFFIXES = {
     "metadata": "artifacts/metadata.json",
+    "extracted_audio": "artifacts/extracted_audio.wav",
+    "enhanced_audio": "artifacts/enhanced_audio.wav",
+    "vad_segments": "artifacts/vad_segments.json",
+    "transcript": "artifacts/transcript.json",
+    "cut_plan": "artifacts/cut_plan.json",
     "proxy": "artifacts/proxy.mp4",
     "sampled_frames": "artifacts/sampled_frames.json",
     "body_tracks_raw": "artifacts/body_tracks_raw.json",

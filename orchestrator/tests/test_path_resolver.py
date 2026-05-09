@@ -35,6 +35,11 @@ class PathResolverTests(unittest.TestCase):
     def test_artifact_paths_cover_all_known_keys(self) -> None:
         expected = {
             "metadata": "jobs/job_001/artifacts/metadata.json",
+            "extracted_audio": "jobs/job_001/artifacts/extracted_audio.wav",
+            "enhanced_audio": "jobs/job_001/artifacts/enhanced_audio.wav",
+            "vad_segments": "jobs/job_001/artifacts/vad_segments.json",
+            "transcript": "jobs/job_001/artifacts/transcript.json",
+            "cut_plan": "jobs/job_001/artifacts/cut_plan.json",
             "proxy": "jobs/job_001/artifacts/proxy.mp4",
             "sampled_frames": "jobs/job_001/artifacts/sampled_frames.json",
             "body_tracks_raw": "jobs/job_001/artifacts/body_tracks_raw.json",
@@ -68,6 +73,20 @@ class PathResolverTests(unittest.TestCase):
     def test_manifest_name_rejects_unknown_value(self) -> None:
         with self.assertRaises(KeyError):
             manifest_path("job_001", "timeline")
+
+    def test_phase2_audio_artifact_paths(self) -> None:
+        self.assertEqual(
+            artifact_path("job_xyz", "extracted_audio"),
+            "jobs/job_xyz/artifacts/extracted_audio.wav",
+        )
+        self.assertEqual(
+            artifact_path("job_xyz", "vad_segments"),
+            "jobs/job_xyz/artifacts/vad_segments.json",
+        )
+        self.assertEqual(
+            artifact_path("job_xyz", "cut_plan"),
+            "jobs/job_xyz/artifacts/cut_plan.json",
+        )
 
 
 if __name__ == "__main__":

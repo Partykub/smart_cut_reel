@@ -1,20 +1,33 @@
 import type { JobStatusResponse } from "./types";
 
 async function unwrap<T>(response: Response): Promise<T> {
+  // Read the body as text first so we can fall back to a plain string when the
+  // response isn't valid JSON. Calling response.json() then response.text()
+  // throws "body stream already read" because the underlying ReadableStream
+  // can only be consumed once.
+  const rawText = await response.text();
+
   if (!response.ok) {
-    let detail: string | undefined;
-    try {
-      const body = (await response.json()) as { detail?: unknown };
-      detail =
-        typeof body?.detail === "string"
-          ? body.detail
-          : JSON.stringify(body);
-    } catch {
-      detail = await response.text();
+    let detail = rawText;
+    if (rawText) {
+      try {
+        const body = JSON.parse(rawText) as { detail?: unknown };
+        if (typeof body?.detail === "string") {
+          detail = body.detail;
+        } else if (body && typeof body === "object") {
+          detail = JSON.stringify(body);
+        }
+      } catch {
+        // rawText is already the best we have
+      }
     }
     throw new Error(detail || `Request failed with ${response.status}`);
   }
-  return (await response.json()) as T;
+
+  if (!rawText) {
+    throw new Error("Empty response body");
+  }
+  return JSON.parse(rawText) as T;
 }
 
 export async function createJob(formData: FormData): Promise<JobStatusResponse> {

@@ -1,0 +1,21 @@
+{
+    "job_id": "job_phase2_light_cut",
+    "crop_width": 608,
+    "crop_height": 1080,
+    "source_resolution": {"width": 1920, "height": 1080},
+    "target_resolution": {"width": 1080, "height": 1920},
+    "smoothing_method": "exponential",
+    "smoothing_strength": 0.82,
+    "max_velocity_px_per_second": 700.0,
+    "max_acceleration_px_per_second2": 1600.0,
+    "dead_zone_px": 80.0,
+    "easing": "easeInOutCubic",
+    "keyframes": [
+        {"frame_index": 0, "t": 0.0, "x": 660.0, "y": 0.0, "confidence": 0.92, "smoothed": true},
+        {"frame_index": 150, "t": 15.0, "x": 700.0, "y": 0.0, "confidence": 0.92, "smoothed": true},
+        {"frame_index": 285, "t": 28.5, "x": 720.0, "y": 0.0, "confidence": 0.92, "smoothed": true},
+        {"frame_index": 315, "t": 31.5, "x": 700.0, "y": 0.0, "confidence": 0.92, "smoothed": true},
+        {"frame_index": 450, "t": 45.0, "x": 680.0, "y": 0.0, "confidence": 0.92, "smoothed": true},
+        {"frame_index": 600, "t": 60.0, "x": 660.0, "y": 0.0, "confidence": 0.92, "smoothed": true}
+    ]
+}

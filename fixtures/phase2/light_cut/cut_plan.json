@@ -1,0 +1,23 @@
+{
+    "schema_version": "2.0.0",
+    "job_id": "job_phase2_light_cut",
+    "feature_enabled": true,
+    "source_duration_seconds": 60.0,
+    "config_used": {
+        "silence_threshold_seconds": 0.8,
+        "keep_padding_before": 0.15,
+        "keep_padding_after": 0.2,
+        "min_keep_segment_seconds": 0.5
+    },
+    "keep_segments": [
+        {"source_start": 0.0, "source_end": 28.7},
+        {"source_start": 31.35, "source_end": 60.0}
+    ],
+    "metrics": {
+        "total_kept_seconds": 57.35,
+        "total_removed_seconds": 2.65,
+        "cut_count": 1,
+        "compression_ratio": 0.955833
+    },
+    "plan_warnings": []
+}

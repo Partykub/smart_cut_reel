@@ -1,15 +1,19 @@
 # smart_cut_reel
 
-Phase 1 focuses on converting one 16:9 source video into a 9:16 vertical output with subject-aware smooth reframing.
+Phase 1 converts one 16:9 source video into a 9:16 vertical output with subject-aware smooth reframing.
+Phase 2 adds dead air cutting on top of Phase 1 by inserting an audio-driven planning chain
+(audio extraction → voice activity detection → cut planning) before the vision pipeline and
+extending the renderer with a single-pass trim+crop+concat mode.
+Phase 3 raises audio quality to a "production podcast" tier by inserting an enhancement
+service (denoise + EBU R128 loudness normalization) before VAD/ASR, swapping the energy
+VAD for **Silero VAD v5**, adding a **faster-whisper** transcription service with word-level
+timestamps, and extending the cut planner with filler-word removal.
 
 ## Current Status
 
-- P1-A01 completed: shared contracts for `job_manifest.json`, `artifact_manifest.json`, and `service_status.json` are defined under `contracts/`.
-- P1-A02 completed: the Orchestrator now has canonical MinIO path helpers, object-store abstractions, manifest management, and artifact helpers under `orchestrator/`.
-- P1-A03 completed: the Orchestrator now exposes Python service logic plus FastAPI endpoints for create job, get status, and run job.
-- P1-A04 completed: `run_job` now supports real sequential `/run` orchestration with per-step failure handling when service endpoints are configured, and otherwise falls back to the mock runner for local development.
-- P1-C01 through P1-G03 now have baseline implementations for the early pipeline: validation, media metadata, proxy sampling, detector-backed body detection with fallback, track interpolation, reframe planning, and easing/smoothing.
-- P1-H01–P1-H03 and P1-B03 have baseline implementations: `services/render_plan_compiler/` emits `render_plan.json`; `services/ffmpeg_renderer/` renders static or segmented smooth crop to `final_9x16.mp4`; the orchestrator exposes `GET /jobs/{job_id}/artifacts/{artifact_key}` and the debug frontend can preview/download via `/api/jobs/[jobId]/output`.
+- P1-A01 through P1-H03 / P1-B03 completed (Phase 1 baseline shipped).
+- Phase 2 (`pipeline_id = phase2_smooth_reframe_dead_air_cut`, 12 steps) shipped: shared contracts accept `schema_version 1.0.0` and `2.0.0`; artifacts `extracted_audio`, `vad_segments`, `cut_plan`; `services/audio_extraction/`, `services/voice_activity_detection/`, `services/dead_air_cut_planning/` live with FastAPI `/run` adapters; `render_plan_compiler` + `ffmpeg_renderer` understand `compiler_render_mode = smooth_crop_with_cuts` and slice audio per keep segment so dead-air removal stays A/V-synced.
+- Phase 3 (`pipeline_id = phase3_audio_quality_cut`, 14 steps, `schema_version 3.0.0`) shipped: new services `services/audio_enhancement/` (highpass + `afftdn` denoise + EBU R128 `loudnorm`) and `services/transcription/` (faster-whisper + filler-word detection); `voice_activity_detection` gained a Silero v5 ONNX backend (`model: silero_v4`) and an `audio_source` selector that prefers `enhanced_audio.wav`; `dead_air_cut_planning` extended to subtract filler-word intervals from `keep_segments` when `enabled_features.remove_filler_words` is on. Phase 1 / Phase 2 jobs remain backward-compatible.
 
 ## Source Of Truth
 
@@ -46,8 +50,13 @@ Phase 1 focuses on converting one 16:9 source video into a 9:16 vertical output 
 - `services/track_interpolation/`: fills short gaps, applies hold/center fallback, and suppresses large outlier jumps.
 - `services/reframe_planning/`: converts interpolated tracks into clamped 9:16 crop keyframes.
 - `services/easing_smoothing/`: smooths raw reframe keyframes with easing, dead-zone handling, and bounded motion.
-- `services/render_plan_compiler/`: builds `artifacts/render_plan.json` from metadata + `reframe_plan_smooth.json` (supports `compiler_render_mode` `static_crop` or `smooth_crop` in `job_manifest.service_config.render_plan_compiler`).
-- `services/ffmpeg_renderer/`: renders `outputs/final_9x16.mp4` via FFmpeg (`static_crop` uses the first keyframe; `smooth_crop` slices segments between keyframes, concatenates, then muxes audio).
+- `services/render_plan_compiler/`: builds `artifacts/render_plan.json` from metadata + `reframe_plan_smooth.json` (and, for Phase 2, `cut_plan.json`). Supports `compiler_render_mode` ∈ {`static_crop`, `smooth_crop`, `smooth_crop_with_cuts`}.
+- `services/ffmpeg_renderer/`: renders `outputs/final_9x16.mp4` via FFmpeg. `static_crop` uses the first keyframe; `smooth_crop` slices windows between keyframes, concatenates, then muxes audio; `smooth_crop_with_cuts` does the same per keep-segment and slices the source audio to match (so dead-air removal stays A/V-synced).
+- `services/audio_extraction/`: decodes the source audio track to mono PCM 16-bit WAV (default 16 kHz) and emits `artifacts/extracted_audio.wav`.
+- `services/audio_enhancement/` (Phase 3): runs an FFmpeg filter chain (`highpass` → `afftdn` denoise → `loudnorm` EBU R128 to -16 LUFS / -1.5 dBTP by default) on `extracted_audio.wav` and emits `artifacts/enhanced_audio.wav`. On FFmpeg failure it copies the source audio through and emits a warning so the pipeline still proceeds.
+- `services/voice_activity_detection/`: segments the timeline into `speech` / `silence` runs. `model: energy` is the Phase 2 default; `model: silero_v4` (Phase 3 default) loads the bundled Silero VAD v5 ONNX weights via `silero-vad` + `onnxruntime` (cached once per process). `audio_source` selects between `extracted_audio`, `enhanced_audio`, or `enhanced_audio_or_extracted` (fallback). Emits `artifacts/vad_segments.json`.
+- `services/transcription/` (Phase 3): runs `faster-whisper` with word-level timestamps, restricted to the speech intervals from `vad_segments.json` so silence is skipped. Detects filler words from a configurable Thai + English dictionary (with surrounding-silence padding rule) and emits `artifacts/transcript.json`. Models are loaded lazily and cached per process; on model failure it emits an empty transcript so the rest of the pipeline still completes.
+- `services/dead_air_cut_planning/`: turns the VAD timeline into `keep_segments` honoring `silence_threshold_seconds`, `keep_padding_before/after`, and `min_keep_segment_seconds`. When `enabled_features.remove_filler_words` is `true` and `transcript.json` is present, also subtracts filler-word intervals (with `filler_padding_before/after`) from the keep segments and reports `removed_filler_seconds` / `filler_word_count` in the plan metrics. When `enabled_features.remove_dead_air` is `false`, emits an identity plan so the renderer reuses Phase 1 behavior unchanged.
 
 ## Local Setup
 
@@ -58,12 +67,17 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-To enable the real P1-A04 HTTP runner, configure service URLs before starting the Orchestrator:
+To enable the real HTTP runner, configure service URLs before starting the Orchestrator. Phase 2 adds three audio services on ports 8019–8021; Phase 3 adds two more on ports 8022–8023:
 
 ```bash
 export ORCHESTRATOR_SERVICE_ENDPOINTS='{
 	"validation": "http://validation:8000",
 	"media_metadata": "http://media-metadata:8000",
+	"audio_extraction": "http://audio-extraction:8000",
+	"audio_enhancement": "http://audio-enhancement:8000",
+	"voice_activity_detection": "http://voice-activity-detection:8000",
+	"transcription": "http://transcription:8000",
+	"dead_air_cut_planning": "http://dead-air-cut-planning:8000",
 	"proxy_frame_sampling": "http://proxy-frame-sampling:8000",
 	"body_detection": "http://body-detection:8000",
 	"track_interpolation": "http://track-interpolation:8000",
@@ -87,7 +101,40 @@ python3 -m venv .venv
 ./scripts/start_local_stack.sh
 ```
 
-This starts all nine microservices on `127.0.0.1:8010–8018` and the orchestrator on **`http://127.0.0.1:8000`**, using `SMART_CUT_OBJECT_STORE_ROOT` (default: `.orchestrator-data/` under the repo). Press **Ctrl+C** to stop every process.
+This starts every microservice (Phase 1 ports `8010–8018` + Phase 2 ports `8019–8021` + Phase 3 ports `8022–8023`) and the orchestrator on **`http://127.0.0.1:8000`**, using `SMART_CUT_OBJECT_STORE_ROOT` (default: `.orchestrator-data/` under the repo). Press **Ctrl+C** to stop every process.
+
+If you want to avoid the first Phase 3 job stalling on model download, prefetch the transcription model before running jobs:
+
+```bash
+# Optional: set model / compute_type first (defaults: small + int8)
+export TRANSCRIPTION_WARMUP_MODEL=small
+export TRANSCRIPTION_WARMUP_COMPUTE_TYPE=int8
+
+# One-shot prefetch
+./scripts/prefetch_transcription_model.sh
+
+# Or prefetch as part of startup
+./scripts/start_local_stack.sh --prefetch-transcription-model
+```
+
+Notes:
+- First-time `medium` downloads are significantly larger/slower than `small`.
+- Setting `HF_TOKEN` can improve HuggingFace Hub download reliability/speed.
+
+### Choosing Phase 1 vs Phase 2 vs Phase 3
+
+Pass `pipeline_id` to `POST /jobs` (form field). The orchestrator picks the matching manifest template:
+
+```bash
+# Phase 1 (default) — smooth reframe only (9 steps)
+curl -F "source=@clip.mp4" http://127.0.0.1:8000/jobs
+
+# Phase 2 — smooth reframe + dead air cutting (12 steps)
+curl -F "source=@clip.mp4" -F "pipeline_id=phase2_smooth_reframe_dead_air_cut" http://127.0.0.1:8000/jobs
+
+# Phase 3 — Phase 2 + audio enhancement + Silero VAD + transcription + filler-word cut (14 steps)
+curl -F "source=@clip.mp4" -F "pipeline_id=phase3_audio_quality_cut" http://127.0.0.1:8000/jobs
+```
 
 Background mode:
 
@@ -116,6 +163,14 @@ Run the current focused test suite with:
 	services.validation.tests.test_validation_api \
 	services.media_metadata.tests.test_media_metadata_service \
 	services.media_metadata.tests.test_media_metadata_api \
+	services.audio_extraction.tests.test_audio_extraction_service \
+	services.audio_extraction.tests.test_audio_extraction_api \
+	services.audio_enhancement.tests.test_audio_enhancement_service \
+	services.voice_activity_detection.tests.test_vad_service \
+	services.voice_activity_detection.tests.test_vad_api \
+	services.transcription.tests.test_transcription_service \
+	services.dead_air_cut_planning.tests.test_dead_air_cut_planning_service \
+	services.dead_air_cut_planning.tests.test_dead_air_cut_planning_api \
 	services.proxy_frame_sampling.tests.test_proxy_frame_sampling_service \
 	services.proxy_frame_sampling.tests.test_proxy_frame_sampling_api \
 	services.body_detection.tests.test_body_detection_service \
@@ -132,7 +187,11 @@ Run the current focused test suite with:
 	orchestrator.tests.test_path_resolver \
 	orchestrator.tests.test_artifact_helpers \
 	orchestrator.tests.test_pipeline_runner \
-	orchestrator.tests.test_api
+	orchestrator.tests.test_api \
+	tests.integration.test_phase2_fixtures \
+	tests.integration.test_phase2_render_plan_compiler_fixtures \
+	tests.integration.test_phase2_dead_air_e2e \
+	tests.integration.test_phase3_audio_quality_e2e
 ```
 
 ## What The Team Should Do Next

@@ -1,0 +1,22 @@
+{
+    "schema_version": "2.0.0",
+    "job_id": "job_phase2_no_cut",
+    "feature_enabled": false,
+    "source_duration_seconds": 60.0,
+    "config_used": {
+        "silence_threshold_seconds": 0.8,
+        "keep_padding_before": 0.15,
+        "keep_padding_after": 0.2,
+        "min_keep_segment_seconds": 0.5
+    },
+    "keep_segments": [
+        {"source_start": 0.0, "source_end": 60.0}
+    ],
+    "metrics": {
+        "total_kept_seconds": 60.0,
+        "total_removed_seconds": 0.0,
+        "cut_count": 0,
+        "compression_ratio": 1.0
+    },
+    "plan_warnings": []
+}

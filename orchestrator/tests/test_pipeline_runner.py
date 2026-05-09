@@ -8,6 +8,8 @@ import httpx
 
 from orchestrator.contracts import ARTIFACT_CONTENT_TYPES
 from orchestrator.contracts import ARTIFACT_PRODUCERS
+from orchestrator.contracts import PHASE_2_PIPELINE_ID
+from orchestrator.contracts import PHASE_2_STEP_IDS
 from orchestrator.contracts import PIPELINE_STEP_IDS
 from orchestrator.object_store import FilesystemObjectStore
 from orchestrator.pipeline_runner import HttpPipelineRunner
@@ -85,7 +87,12 @@ class HttpPipelineRunnerTests(unittest.TestCase):
         self.assertEqual(seen_steps, list(PIPELINE_STEP_IDS))
         self.assertEqual(result["service_status"]["status"], "success")
         self.assertIsNone(result["service_status"]["current_step"])
-        self.assertEqual(set(result["artifacts"]), set(ARTIFACT_PRODUCERS))
+        phase1_artifact_keys = {
+            artifact_key
+            for artifact_key, producer in ARTIFACT_PRODUCERS.items()
+            if producer in PIPELINE_STEP_IDS
+        }
+        self.assertEqual(set(result["artifacts"]), phase1_artifact_keys)
         self.assertEqual(result["service_status"]["warnings"][0]["code"], "BODY_DETECTION_FALLBACK")
         self.assertEqual(result["service_status"]["warnings"][0]["step"], "body_detection")
 
@@ -298,3 +305,118 @@ class HttpPipelineRunnerTests(unittest.TestCase):
                 for warning in response.warnings
             ],
         }
+
+
+class HttpPipelineRunnerPhase2Tests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.store = FilesystemObjectStore(Path(self.temp_dir.name))
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def test_phase2_runner_invokes_all_twelve_steps_in_order(self) -> None:
+        seen_steps: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content.decode("utf-8"))
+            step_id = payload["step_id"]
+            seen_steps.append(step_id)
+
+            for artifact_key, object_key in payload["expected_outputs"].items():
+                self.store.upload_bytes(
+                    object_key,
+                    f"{step_id}:{artifact_key}".encode("utf-8"),
+                    content_type=ARTIFACT_CONTENT_TYPES[artifact_key],
+                )
+
+            return httpx.Response(
+                200,
+                json={
+                    "service_id": step_id,
+                    "status": "success",
+                    "outputs": payload["expected_outputs"],
+                    "warnings": [],
+                },
+            )
+
+        transport = httpx.MockTransport(handler)
+        runner = HttpPipelineRunner(
+            service_endpoints={
+                step_id: f"http://{step_id}.service" for step_id in PHASE_2_STEP_IDS
+            },
+            minio_bucket="smart-cut",
+            client_factory=lambda: httpx.Client(transport=transport),
+        )
+        service = OrchestratorService(self.store, runner=runner)
+
+        created = service.create_job(
+            source_bytes=b"video-bytes",
+            original_filename="clip.mp4",
+            job_id="job_phase2_runner_success",
+            pipeline_id=PHASE_2_PIPELINE_ID,
+        )
+        result = service.run_job(created["job_id"])
+
+        expected_phase2_artifacts = {
+            artifact_key
+            for artifact_key, producer in ARTIFACT_PRODUCERS.items()
+            if producer in PHASE_2_STEP_IDS
+        }
+        self.assertEqual(seen_steps, list(PHASE_2_STEP_IDS))
+        self.assertEqual(result["service_status"]["status"], "success")
+        self.assertEqual(set(result["artifacts"]), expected_phase2_artifacts)
+        self.assertEqual(result["pipeline"]["pipeline_id"], PHASE_2_PIPELINE_ID)
+        self.assertEqual(result["enabled_features"], {"remove_dead_air": True})
+
+    def test_phase2_runner_passes_phase2_service_config_through_to_each_step(self) -> None:
+        observed_configs: dict[str, dict] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content.decode("utf-8"))
+            observed_configs[payload["step_id"]] = dict(payload.get("config") or {})
+
+            for artifact_key, object_key in payload["expected_outputs"].items():
+                self.store.upload_bytes(
+                    object_key,
+                    f"{payload['step_id']}:{artifact_key}".encode("utf-8"),
+                    content_type=ARTIFACT_CONTENT_TYPES[artifact_key],
+                )
+
+            return httpx.Response(
+                200,
+                json={
+                    "service_id": payload["step_id"],
+                    "status": "success",
+                    "outputs": payload["expected_outputs"],
+                    "warnings": [],
+                },
+            )
+
+        transport = httpx.MockTransport(handler)
+        runner = HttpPipelineRunner(
+            service_endpoints={
+                step_id: f"http://{step_id}.service" for step_id in PHASE_2_STEP_IDS
+            },
+            minio_bucket="smart-cut",
+            client_factory=lambda: httpx.Client(transport=transport),
+        )
+        service = OrchestratorService(self.store, runner=runner)
+
+        created = service.create_job(
+            source_bytes=b"video-bytes",
+            original_filename="clip.mp4",
+            job_id="job_phase2_runner_config",
+            pipeline_id=PHASE_2_PIPELINE_ID,
+        )
+        service.run_job(created["job_id"])
+
+        self.assertIn("audio_extraction", observed_configs)
+        self.assertEqual(observed_configs["audio_extraction"]["sample_rate"], 16000)
+        self.assertEqual(
+            observed_configs["voice_activity_detection"]["model"], "silero_v5"
+        )
+        self.assertEqual(
+            observed_configs["render_plan_compiler"]["compiler_render_mode"],
+            "smooth_crop_with_cuts",
+        )

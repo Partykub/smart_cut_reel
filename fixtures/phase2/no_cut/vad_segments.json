@@ -1,0 +1,20 @@
+{
+    "schema_version": "2.0.0",
+    "job_id": "job_phase2_no_cut",
+    "model": "energy",
+    "audio_object_key": "fixtures/phase2/no_cut/extracted_audio.wav",
+    "sample_rate": 16000,
+    "channels": 1,
+    "duration_seconds": 60.0,
+    "frame_duration_seconds": 0.03,
+    "energy_threshold_db": -35.0,
+    "segments": [
+        {"type": "speech", "start": 0.0, "end": 60.0, "energy_db_avg": -22.0}
+    ],
+    "metrics": {
+        "total_speech_seconds": 60.0,
+        "total_silence_seconds": 0.0,
+        "speech_segment_count": 1,
+        "silence_segment_count": 0
+    }
+}

@@ -116,3 +116,47 @@ class ArtifactHelperTests(unittest.TestCase):
         self.assertTrue(
             all(object_key.startswith("jobs/job_001/") for object_key in self.helper.list_job_objects("job_001"))
         )
+
+    def test_phase2_initial_job_state_creates_twelve_steps(self) -> None:
+        phase2_manifest = json.loads(
+            Path("contracts/examples/job_manifest.phase2.sample.json").read_text(encoding="utf-8")
+        )
+        self.manifest_manager.create_initial_job_state(phase2_manifest)
+
+        service_status = self.manifest_manager.read_service_status(phase2_manifest["job_id"])
+        self.assertEqual(service_status["schema_version"], "2.0.0")
+        self.assertEqual(len(service_status["steps"]), 12)
+        self.assertIn("audio_extraction", service_status["steps"])
+        self.assertIn("voice_activity_detection", service_status["steps"])
+        self.assertIn("dead_air_cut_planning", service_status["steps"])
+
+        artifact_manifest = self.manifest_manager.read_artifact_manifest(phase2_manifest["job_id"])
+        self.assertEqual(artifact_manifest["schema_version"], "2.0.0")
+
+    def test_phase2_register_audio_artifacts(self) -> None:
+        phase2_manifest = json.loads(
+            Path("contracts/examples/job_manifest.phase2.sample.json").read_text(encoding="utf-8")
+        )
+        self.manifest_manager.create_initial_job_state(phase2_manifest)
+        job_id = phase2_manifest["job_id"]
+
+        self.store.upload_bytes(artifact_path(job_id, "extracted_audio"), b"WAVE-bytes", content_type="audio/wav")
+        entry = self.manifest_manager.register_artifact(job_id, "extracted_audio")
+        self.assertEqual(entry["produced_by"], "audio_extraction")
+        self.assertEqual(entry["content_type"], "audio/wav")
+        self.assertEqual(entry["object_key"], artifact_path(job_id, "extracted_audio"))
+
+        self.helper.upload_json_artifact(
+            job_id,
+            "vad_segments",
+            {"segments": [{"start": 0.0, "end": 1.0, "type": "speech", "confidence": 0.9}]},
+        )
+        self.helper.upload_json_artifact(
+            job_id,
+            "cut_plan",
+            {"keep_segments": [{"source_start": 0.0, "source_end": 1.0}]},
+        )
+
+        artifact_manifest = self.manifest_manager.read_artifact_manifest(job_id)
+        self.assertEqual(artifact_manifest["artifacts"]["vad_segments"]["produced_by"], "voice_activity_detection")
+        self.assertEqual(artifact_manifest["artifacts"]["cut_plan"]["produced_by"], "dead_air_cut_planning")

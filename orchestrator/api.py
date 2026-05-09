@@ -1,5 +1,7 @@
 """FastAPI adapter for the Phase 1 orchestrator service."""
 
+import asyncio
+import json
 from pathlib import Path
 
 from .object_store import FilesystemObjectStore
@@ -28,13 +30,22 @@ def create_app(service: OrchestratorService | None = None):
     async def create_job(
         source: UploadFile = File(...),
         created_by: str = Form("debug_frontend"),
+        pipeline_id: str = Form("phase1_smooth_reframe_16x9_to_9x16"),
+        enabled_features: str | None = Form(None),
     ) -> dict:
+        feature_overrides = _parse_enabled_features(enabled_features)
+        source_bytes = await source.read()
         try:
-            return orchestrator_service.create_job(
-                source_bytes=await source.read(),
+            # Disk writes for large uploads can be tens of MB; off-load to a
+            # worker thread so the event loop is free for /status polls.
+            return await asyncio.to_thread(
+                orchestrator_service.create_job,
+                source_bytes=source_bytes,
                 original_filename=source.filename or "source.mp4",
                 content_type=source.content_type or "application/octet-stream",
                 created_by=created_by,
+                pipeline_id=pipeline_id,
+                enabled_features=feature_overrides,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -50,8 +61,15 @@ def create_app(service: OrchestratorService | None = None):
 
     @app.post("/jobs/{job_id}/run")
     async def run_job(job_id: str) -> dict:
+        # ``run_job`` performs synchronous HTTP calls into the worker services
+        # (with model downloads/inference that can take minutes). Running it
+        # directly on the FastAPI event loop blocks every other endpoint —
+        # including ``POST /jobs`` and ``GET /jobs/{id}/status`` — making the
+        # UI appear frozen while a job is in progress. Off-loading to the
+        # default thread executor keeps the loop responsive so users can
+        # create new jobs and poll status concurrently.
         try:
-            return orchestrator_service.run_job(job_id)
+            return await asyncio.to_thread(orchestrator_service.run_job, job_id)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=f"Unknown job_id '{job_id}'.") from exc
         except ValueError as exc:
@@ -70,3 +88,45 @@ def create_app(service: OrchestratorService | None = None):
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return app
+
+
+def _parse_enabled_features(raw: str | None) -> dict[str, bool] | None:
+    """Parse the optional ``enabled_features`` form field.
+
+    The frontend sends this as a JSON object (e.g.
+    ``{"remove_dead_air": true, "enhance_audio": false}``) so users can flip
+    individual feature toggles independently of the pipeline_id template.
+    Empty / null values mean "use template defaults" — no override.
+    """
+    if raw is None:
+        return None
+    text = raw.strip()
+    if not text:
+        return None
+    try:
+        from fastapi import HTTPException
+
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"enabled_features must be a JSON object: {exc.msg}",
+        ) from exc
+    if not isinstance(parsed, dict):
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=400,
+            detail="enabled_features must be a JSON object of boolean flags.",
+        )
+    coerced: dict[str, bool] = {}
+    for key, value in parsed.items():
+        if not isinstance(key, str):
+            from fastapi import HTTPException
+
+            raise HTTPException(
+                status_code=400,
+                detail="enabled_features keys must be strings.",
+            )
+        coerced[key] = bool(value)
+    return coerced

@@ -9,7 +9,7 @@ from typing import Protocol
 
 from .artifact_helper import ArtifactHelper
 from .contracts import ARTIFACT_PRODUCERS
-from .contracts import PIPELINE_STEP_IDS
+from .contracts import PHASE_1_STEP_IDS
 from .manifest_manager import ManifestManager
 from .manifest_manager import utc_now
 from .path_resolver import artifact_path
@@ -50,12 +50,14 @@ class HttpPipelineRunner:
         *,
         service_endpoints: Mapping[str, str],
         minio_bucket: str,
-        request_timeout_seconds: float = 30.0,
+        request_timeout_seconds: float = 600.0,
+        step_timeouts_seconds: Mapping[str, float] | None = None,
         client_factory: Callable[[], Any] | None = None,
     ) -> None:
         self.service_endpoints = dict(service_endpoints)
         self.minio_bucket = minio_bucket
         self.request_timeout_seconds = request_timeout_seconds
+        self.step_timeouts_seconds = dict(step_timeouts_seconds or {})
         self.client_factory = client_factory
 
     def run(
@@ -152,9 +154,13 @@ class HttpPipelineRunner:
             job_manifest=job_manifest,
         )
         request_url = self._run_url(step_id)
+        step_timeout = self.step_timeouts_seconds.get(step_id)
 
         try:
-            response = client.post(request_url, json=request_payload)
+            if step_timeout is not None:
+                response = client.post(request_url, json=request_payload, timeout=step_timeout)
+            else:
+                response = client.post(request_url, json=request_payload)
         except Exception as exc:
             raise PipelineExecutionError(f"request to {request_url} failed: {exc}") from exc
 
@@ -288,7 +294,7 @@ class HttpPipelineRunner:
 
 
 class MockPipelineRunner:
-    """Temporary runner used until P1-A04 implements real service orchestration."""
+    """Local fallback runner that walks the job's pipeline without calling services."""
 
     def run(
         self,
@@ -299,7 +305,9 @@ class MockPipelineRunner:
     ) -> dict[str, Any]:
         del artifact_helper
 
-        for index, step_id in enumerate(PIPELINE_STEP_IDS):
+        steps = manifest_manager.pipeline_steps(job_id) or PHASE_1_STEP_IDS
+
+        for index, step_id in enumerate(steps):
             started_at = utc_now()
             manifest_manager.set_step_state(
                 job_id,
@@ -310,7 +318,7 @@ class MockPipelineRunner:
                 current_step=step_id,
             )
 
-            next_step = PIPELINE_STEP_IDS[index + 1] if index + 1 < len(PIPELINE_STEP_IDS) else None
+            next_step = steps[index + 1] if index + 1 < len(steps) else None
             manifest_manager.set_step_state(
                 job_id,
                 step_id,
@@ -324,6 +332,6 @@ class MockPipelineRunner:
             job_id,
             code="PIPELINE_RUNNER_MOCK",
             message="Mock pipeline runner completed without calling external services.",
-            step=PIPELINE_STEP_IDS[0],
+            step=steps[0],
         )
         return manifest_manager.read_service_status(job_id)

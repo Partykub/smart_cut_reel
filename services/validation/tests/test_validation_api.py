@@ -70,4 +70,5 @@ class ValidationApiTests(unittest.TestCase):
             "status": "success",
             "outputs": {},
             "warnings": [],
+            "metrics": {},
         })

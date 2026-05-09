@@ -62,6 +62,7 @@ class ApiRunResponse(BaseModel):
     status: Literal["success"] = "success"
     outputs: dict[str, str] = Field(default_factory=dict)
     warnings: list[ApiServiceWarning] = Field(default_factory=list)
+    metrics: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
     def from_runtime(cls, response: RunResponse) -> "ApiRunResponse":
@@ -70,4 +71,5 @@ class ApiRunResponse(BaseModel):
             status=response.status,
             outputs=dict(response.outputs),
             warnings=[ApiServiceWarning.from_runtime(warning) for warning in response.warnings],
+            metrics=dict(response.metrics),
         )
