@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 import tempfile
 from typing import Any
 
@@ -23,6 +24,14 @@ class DetectionCandidate:
     confidence: float
 
 
+@dataclass(slots=True)
+class DetectionRunResult:
+    detections_by_frame: dict[int, DetectionCandidate]
+    detector_backend: str
+    track_source: str
+    warnings: list[ServiceWarning]
+
+
 class BodyDetectionService:
     service_id = "body_detection"
 
@@ -37,16 +46,16 @@ class BodyDetectionService:
         if not isinstance(frames, list) or not frames:
             raise ValueError("sampled_frames artifact must contain a non-empty frames list")
 
-        detections_by_frame = self._detect_proxy_frames(
+        detection_result = self._detect_proxy_frames(
             proxy_bytes=context.read_bytes(proxy_object_key),
             frames=frames,
             proxy_width=proxy_width,
             proxy_height=proxy_height,
             source_width=source_width,
             source_height=source_height,
-            min_confidence=float(config["min_confidence"]),
-            subject_selection_strategy=str(config["subject_selection_strategy"]),
+            config=config,
         )
+        detections_by_frame = detection_result.detections_by_frame
 
         center_x = source_width / 2.0
         center_y = source_height / 2.0
@@ -99,14 +108,14 @@ class BodyDetectionService:
                     },
                     "confidence": round(detection.confidence, 4),
                     "missing": False,
-                    "source": "hog_person_detector",
+                    "source": detection_result.track_source,
                 }
             )
 
         payload = {
             "job_id": context.job_id,
             "coordinate_space": "source",
-            "detector_backend": "hog_person_detector",
+            "detector_backend": detection_result.detector_backend,
             "source_resolution": {"width": source_width, "height": source_height},
             "proxy_resolution": {"width": proxy_width, "height": proxy_height},
             "detection_summary": {
@@ -119,7 +128,7 @@ class BodyDetectionService:
         output_key = context.expected_output_key("body_tracks_raw")
         context.write_json(output_key, payload)
 
-        warnings: list[ServiceWarning] = []
+        warnings: list[ServiceWarning] = list(detection_result.warnings)
         if missing_count > 0:
             warnings.append(
                 ServiceWarning(
@@ -138,7 +147,11 @@ class BodyDetectionService:
     def _config(self, context: ServiceContext) -> dict[str, Any]:
         defaults = {
             "subject_selection_strategy": "nearest_previous_crop_center",
-            "min_confidence": 0.5,
+            "min_confidence": 0.9,
+            "model_path": os.getenv("BODY_DETECTION_YOLO_MODEL", "yolov8m.pt"),
+            "device_preference": "gpu_first",
+            "image_size": 640,
+            "person_class_id": 0,
         }
         defaults.update(context.request.config)
         return defaults
@@ -152,90 +165,203 @@ class BodyDetectionService:
         proxy_height: int,
         source_width: int,
         source_height: int,
-        min_confidence: float,
-        subject_selection_strategy: str,
-    ) -> dict[int, DetectionCandidate]:
+        config: dict[str, Any],
+    ) -> DetectionRunResult:
         try:
             import cv2
-        except ImportError:
-            return {}
+        except ImportError as exc:
+            raise ValueError("opencv-python-headless is required for body detection") from exc
+
+        try:
+            from ultralytics import YOLO
+        except ImportError as exc:
+            raise ValueError("ultralytics is required for YOLO body detection") from exc
+
+        model_path = str(config["model_path"])
+        subject_selection_strategy = str(config["subject_selection_strategy"])
+        min_confidence = float(config["min_confidence"])
+        image_size = int(config["image_size"])
+        person_class_id = int(config["person_class_id"])
+
+        yolo_model = YOLO(model_path)
+        preferred_device = self._preferred_device(str(config["device_preference"]))
+        active_device = preferred_device
+        active_backend = self._backend_name(active_device)
+        warnings: list[ServiceWarning] = []
 
         with tempfile.NamedTemporaryFile(suffix=".mp4") as handle:
             handle.write(proxy_bytes)
             handle.flush()
             capture = cv2.VideoCapture(handle.name)
             if not capture.isOpened():
-                return {}
+                return DetectionRunResult(
+                    detections_by_frame={},
+                    detector_backend=active_backend,
+                    track_source="yolo_person_detector",
+                    warnings=warnings,
+                )
 
             try:
-                detector = self._create_hog_detector(cv2)
-                results: dict[int, DetectionCandidate] = {}
-                previous_center: tuple[float, float] | None = None
-                scale_x = source_width / proxy_width
-                scale_y = source_height / proxy_height
-                for frame in frames:
-                    if not isinstance(frame, dict):
-                        continue
-                    frame_index = int(frame.get("index") or 0)
-                    timestamp_ms = float(frame.get("t") or 0.0) * 1000.0
-                    capture.set(cv2.CAP_PROP_POS_MSEC, timestamp_ms)
-                    ok, image = capture.read()
-                    if not ok or image is None:
-                        continue
-                    candidates = self._detect_people_in_frame(
-                        detector,
-                        image,
+                try:
+                    detections_by_frame = self._run_detection_pass(
+                        cv2=cv2,
+                        capture=capture,
+                        yolo_model=yolo_model,
+                        frames=frames,
+                        proxy_width=proxy_width,
+                        proxy_height=proxy_height,
+                        source_width=source_width,
+                        source_height=source_height,
                         min_confidence=min_confidence,
+                        subject_selection_strategy=subject_selection_strategy,
+                        image_size=image_size,
+                        person_class_id=person_class_id,
+                        device=active_device,
                     )
-                    chosen = self._select_candidate(
-                        candidates,
-                        strategy=subject_selection_strategy,
-                        previous_center=previous_center,
-                    )
-                    if chosen is None:
-                        continue
-                    previous_center = (chosen.x + (chosen.w / 2.0), chosen.y + (chosen.h / 2.0))
-                    results[frame_index] = DetectionCandidate(
-                        x=chosen.x * scale_x,
-                        y=chosen.y * scale_y,
-                        w=chosen.w * scale_x,
-                        h=chosen.h * scale_y,
-                        confidence=chosen.confidence,
-                    )
-                return results
+                except Exception as exc:
+                    if active_device != "cpu":
+                        active_device = "cpu"
+                        active_backend = self._backend_name(active_device)
+                        warnings.append(
+                            ServiceWarning(
+                                code="BODY_DETECTION_GPU_FALLBACK_CPU",
+                                message=f"YOLO GPU inference failed and body detection retried on CPU: {exc}",
+                                step=self.service_id,
+                            )
+                        )
+                        detections_by_frame = self._run_detection_pass(
+                            cv2=cv2,
+                            capture=capture,
+                            yolo_model=yolo_model,
+                            frames=frames,
+                            proxy_width=proxy_width,
+                            proxy_height=proxy_height,
+                            source_width=source_width,
+                            source_height=source_height,
+                            min_confidence=min_confidence,
+                            subject_selection_strategy=subject_selection_strategy,
+                            image_size=image_size,
+                            person_class_id=person_class_id,
+                            device=active_device,
+                        )
+                    else:
+                        raise ValueError(f"YOLO body detection failed on CPU: {exc}") from exc
+
+                return DetectionRunResult(
+                    detections_by_frame=detections_by_frame,
+                    detector_backend=active_backend,
+                    track_source="yolo_person_detector",
+                    warnings=warnings,
+                )
             finally:
                 capture.release()
 
-    def _create_hog_detector(self, cv2: Any) -> Any:
-        detector = cv2.HOGDescriptor()
-        detector.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
-        return detector
+    def _preferred_device(self, device_preference: str) -> str:
+        if device_preference == "cpu":
+            return "cpu"
+
+        try:
+            import torch
+        except ImportError:
+            return "cpu"
+
+        if torch.cuda.is_available():
+            return "cuda:0"
+        return "cpu"
+
+    def _backend_name(self, device: str) -> str:
+        if device.startswith("cuda"):
+            return "yolo_ultralytics_cuda"
+        return "yolo_ultralytics_cpu"
+
+    def _run_detection_pass(
+        self,
+        *,
+        cv2: Any,
+        capture: Any,
+        yolo_model: Any,
+        frames: list[dict[str, Any]],
+        proxy_width: int,
+        proxy_height: int,
+        source_width: int,
+        source_height: int,
+        min_confidence: float,
+        subject_selection_strategy: str,
+        image_size: int,
+        person_class_id: int,
+        device: str,
+    ) -> dict[int, DetectionCandidate]:
+        results: dict[int, DetectionCandidate] = {}
+        previous_center: tuple[float, float] | None = None
+        scale_x = source_width / proxy_width
+        scale_y = source_height / proxy_height
+        for frame in frames:
+            if not isinstance(frame, dict):
+                continue
+            frame_index = int(frame.get("index") or 0)
+            timestamp_ms = float(frame.get("t") or 0.0) * 1000.0
+            capture.set(cv2.CAP_PROP_POS_MSEC, timestamp_ms)
+            ok, image = capture.read()
+            if not ok or image is None:
+                continue
+            candidates = self._detect_people_in_frame(
+                yolo_model,
+                image,
+                min_confidence=min_confidence,
+                image_size=image_size,
+                person_class_id=person_class_id,
+                device=device,
+            )
+            chosen = self._select_candidate(
+                candidates,
+                strategy=subject_selection_strategy,
+                previous_center=previous_center,
+            )
+            if chosen is None:
+                continue
+            previous_center = (chosen.x + (chosen.w / 2.0), chosen.y + (chosen.h / 2.0))
+            results[frame_index] = DetectionCandidate(
+                x=chosen.x * scale_x,
+                y=chosen.y * scale_y,
+                w=chosen.w * scale_x,
+                h=chosen.h * scale_y,
+                confidence=chosen.confidence,
+            )
+        return results
 
     def _detect_people_in_frame(
         self,
-        detector: Any,
+        yolo_model: Any,
         image: Any,
         *,
         min_confidence: float,
+        image_size: int,
+        person_class_id: int,
+        device: str,
     ) -> list[DetectionCandidate]:
-        rects, weights = detector.detectMultiScale(
-            image,
-            winStride=(8, 8),
-            padding=(8, 8),
-            scale=1.05,
+        results = yolo_model.predict(
+            source=image,
+            classes=[person_class_id],
+            conf=min_confidence,
+            imgsz=image_size,
+            device=device,
+            verbose=False,
         )
         candidates: list[DetectionCandidate] = []
-        for (x, y, w, h), weight in zip(rects, weights):
-            confidence = float(weight)
-            if confidence < min_confidence:
-                continue
+        boxes = getattr(results[0], "boxes", None) if results else None
+        if boxes is None:
+            return candidates
+        xyxy_values = boxes.xyxy.tolist() if hasattr(boxes.xyxy, "tolist") else list(boxes.xyxy)
+        confidence_values = boxes.conf.tolist() if hasattr(boxes.conf, "tolist") else list(boxes.conf)
+        for xyxy, confidence in zip(xyxy_values, confidence_values):
+            x1, y1, x2, y2 = [float(value) for value in xyxy]
             candidates.append(
                 DetectionCandidate(
-                    x=float(x),
-                    y=float(y),
-                    w=float(w),
-                    h=float(h),
-                    confidence=confidence,
+                    x=x1,
+                    y=y1,
+                    w=max(0.0, x2 - x1),
+                    h=max(0.0, y2 - y1),
+                    confidence=float(confidence),
                 )
             )
         return candidates

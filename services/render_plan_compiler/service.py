@@ -182,7 +182,7 @@ class RenderPlanCompilerService:
         defaults: dict[str, Any] = {
             "crop_representation": "keyframe_list",
             "audio_policy": "copy_if_possible_else_aac",
-            "compiler_render_mode": "static_crop",
+            "compiler_render_mode": "smooth_crop",
         }
         defaults.update(context.request.config)
 

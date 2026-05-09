@@ -8,18 +8,27 @@ import type { OverallStatus } from "@/lib/types";
 export function RunButton({
   jobId,
   status,
+  onTriggerStart,
+  onRunError,
   onRan,
 }: {
   jobId: string;
   status: OverallStatus;
+  onTriggerStart?: () => void;
+  onRunError?: (error: Error) => void;
   onRan: () => void | Promise<void>;
 }) {
   const [isPending, startTransition] = useTransition();
 
   const handleClick = () => {
+    onTriggerStart?.();
     startTransition(async () => {
       try {
         await runJob(jobId);
+      } catch (error) {
+        onRunError?.(
+          error instanceof Error ? error : new Error(String(error)),
+        );
       } finally {
         await onRan();
       }

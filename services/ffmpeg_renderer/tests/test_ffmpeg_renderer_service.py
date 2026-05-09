@@ -3,6 +3,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+import json
 
 from orchestrator.object_store import FilesystemObjectStore
 from services.common.runtime import RunMinIO
@@ -38,6 +39,16 @@ def _write_minimal_mp4(path: Path) -> None:
     )
 
 
+def _probe_streams(path: Path) -> dict:
+    completed = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_streams", "-of", "json", str(path)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(completed.stdout)
+
+
 @unittest.skipUnless(_ffmpeg_available(), "ffmpeg not installed")
 class FFmpegRendererServiceTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -71,10 +82,27 @@ class FFmpegRendererServiceTests(unittest.TestCase):
             },
         )
         self.store.upload_json(
+            "jobs/job_test/artifacts/body_tracks_raw.json",
+            {
+                "job_id": "job_test",
+                "tracks": [
+                    {
+                        "t": 0.0,
+                        "frame_index": 0,
+                        "missing": False,
+                        "bbox": {"x": 96.0, "y": 20.0, "w": 110.0, "h": 120.0},
+                        "confidence": 0.93,
+                        "source": "yolo_person_detector",
+                    }
+                ],
+            },
+        )
+        self.store.upload_json(
             "jobs/job_test/manifests/artifact_manifest.json",
             {
                 "artifacts": {
                     "render_plan": {"object_key": "jobs/job_test/artifacts/render_plan.json"},
+                    "body_tracks_raw": {"object_key": "jobs/job_test/artifacts/body_tracks_raw.json"},
                 }
             },
         )
@@ -88,6 +116,7 @@ class FFmpegRendererServiceTests(unittest.TestCase):
             },
             expected_outputs={
                 "final_9x16": "jobs/job_test/outputs/final_9x16.mp4",
+                "source_overlay": "jobs/job_test/outputs/source_overlay.mp4",
             },
             config={"video_codec": "libx264", "audio_codec": "aac"},
         )
@@ -103,6 +132,15 @@ class FFmpegRendererServiceTests(unittest.TestCase):
         data = self.store.download_bytes(out_key)
         self.assertGreater(len(data), 1000)
         self.assertEqual(data[4:8], b"ftyp")
+        overlay_key = self.request.expected_outputs["source_overlay"]
+        self.assertEqual(response.outputs["source_overlay"], overlay_key)
+        overlay_data = self.store.download_bytes(overlay_key)
+        self.assertGreater(len(overlay_data), 1000)
+        self.assertEqual(overlay_data[4:8], b"ftyp")
+        overlay_path = self.root / "overlay.mp4"
+        overlay_path.write_bytes(overlay_data)
+        streams = _probe_streams(overlay_path)["streams"]
+        self.assertEqual(streams[0]["codec_name"], "h264")
 
 
 @unittest.skipUnless(_ffmpeg_available(), "ffmpeg not installed")
@@ -324,10 +362,35 @@ class FFmpegRendererSmoothTests(unittest.TestCase):
             },
         )
         self.store.upload_json(
+            "jobs/job_test/artifacts/body_tracks_raw.json",
+            {
+                "job_id": "job_test",
+                "tracks": [
+                    {
+                        "t": 0.0,
+                        "frame_index": 0,
+                        "missing": False,
+                        "bbox": {"x": 40.0, "y": 10.0, "w": 100.0, "h": 130.0},
+                        "confidence": 0.91,
+                        "source": "yolo_person_detector",
+                    },
+                    {
+                        "t": 1.0,
+                        "frame_index": 30,
+                        "missing": False,
+                        "bbox": {"x": 120.0, "y": 12.0, "w": 102.0, "h": 130.0},
+                        "confidence": 0.9,
+                        "source": "yolo_person_detector",
+                    }
+                ],
+            },
+        )
+        self.store.upload_json(
             "jobs/job_test/manifests/artifact_manifest.json",
             {
                 "artifacts": {
                     "render_plan": {"object_key": "jobs/job_test/artifacts/render_plan.json"},
+                    "body_tracks_raw": {"object_key": "jobs/job_test/artifacts/body_tracks_raw.json"},
                 }
             },
         )
@@ -340,6 +403,7 @@ class FFmpegRendererSmoothTests(unittest.TestCase):
             },
             expected_outputs={
                 "final_9x16": "jobs/job_test/outputs/final_9x16.mp4",
+                "source_overlay": "jobs/job_test/outputs/source_overlay.mp4",
             },
             config={},
         )
@@ -351,8 +415,31 @@ class FFmpegRendererSmoothTests(unittest.TestCase):
     def test_smooth_segments_writes_mp4(self) -> None:
         response = self.service.run(build_context(self.request, self.store))
         self.assertIn("final_9x16", response.outputs)
+        self.assertIn("source_overlay", response.outputs)
         data = self.store.download_bytes(self.request.expected_outputs["final_9x16"])
         self.assertGreater(len(data), 1000)
+        overlay_data = self.store.download_bytes(self.request.expected_outputs["source_overlay"])
+        self.assertGreater(len(overlay_data), 1000)
+        overlay_path = self.root / "overlay_smooth.mp4"
+        overlay_path.write_bytes(overlay_data)
+        streams = _probe_streams(overlay_path)["streams"]
+        self.assertEqual(streams[0]["codec_name"], "h264")
+
+
+class FFmpegRendererTrackLookupTests(unittest.TestCase):
+    def test_overlay_uses_current_or_previous_track_not_future_track(self) -> None:
+        service = FFmpegRendererService()
+        tracks = [
+            {"frame_index": 789, "t": 157.8, "bbox": {"x": 10}},
+            {"frame_index": 790, "t": 158.0, "bbox": {"x": 20}},
+            {"frame_index": 791, "t": 158.2, "bbox": {"x": 30}},
+        ]
+        track_times = [157.8, 158.0, 158.2]
+
+        selected = service._track_for_time(tracks, track_times, 158.1)
+
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected["frame_index"], 790)
 
 
 if __name__ == "__main__":

@@ -159,6 +159,14 @@ def interpolate_tracks(
         distance = _center_distance(previous_track, track)
         speed = distance / dt
         if speed > max_center_jump_per_second:
+            if _is_confirmed_transition(
+                tracks=tracks,
+                current_index=index,
+                current_track=track,
+                max_center_jump_per_second=max_center_jump_per_second,
+            ):
+                last_valid_index = index
+                continue
             tracks[index] = _clone_track(previous_track, track)
             tracks[index]["source"] = "outlier_adjusted"
             tracks[index]["interpolated"] = True
@@ -193,6 +201,27 @@ def _next_valid_index(tracks: list[dict[str, Any]], start: int) -> int | None:
         if not bool(tracks[index].get("missing")):
             return index
     return None
+
+
+def _is_confirmed_transition(
+    *,
+    tracks: list[dict[str, Any]],
+    current_index: int,
+    current_track: dict[str, Any],
+    max_center_jump_per_second: float,
+) -> bool:
+    next_index = _next_valid_index(tracks, current_index + 1)
+    if next_index is None:
+        return False
+
+    next_track = tracks[next_index]
+    dt = float(next_track.get("t", 0.0)) - float(current_track.get("t", 0.0))
+    if dt <= 0:
+        return False
+
+    distance = _center_distance(current_track, next_track)
+    speed = distance / dt
+    return speed <= max_center_jump_per_second
 
 
 def _interpolate_track(

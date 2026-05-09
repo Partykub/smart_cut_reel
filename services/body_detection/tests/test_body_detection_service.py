@@ -5,7 +5,9 @@ from unittest.mock import patch
 
 from orchestrator.object_store import FilesystemObjectStore
 from services.body_detection.service import DetectionCandidate
+from services.body_detection.service import DetectionRunResult
 from services.body_detection.service import BodyDetectionService
+from services.common.runtime import ServiceWarning
 from services.common.runtime import RunMinIO
 from services.common.runtime import RunRequest
 from services.common.runtime import build_context
@@ -68,25 +70,43 @@ class BodyDetectionServiceTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
 
+    def test_config_defaults_to_high_confidence_threshold(self) -> None:
+        config = self.service._config(build_context(self.request, self.store))
+
+        self.assertEqual(config["min_confidence"], 0.9)
+
     @patch.object(BodyDetectionService, "_detect_proxy_frames")
     def test_writes_detected_and_fallback_tracks(self, mock_detect_proxy_frames) -> None:
-        mock_detect_proxy_frames.return_value = {
-            0: DetectionCandidate(x=100.0, y=120.0, w=400.0, h=800.0, confidence=0.93),
-            2: DetectionCandidate(x=200.0, y=140.0, w=420.0, h=780.0, confidence=0.88),
-        }
+        mock_detect_proxy_frames.return_value = DetectionRunResult(
+            detections_by_frame={
+                0: DetectionCandidate(x=100.0, y=120.0, w=400.0, h=800.0, confidence=0.93),
+                2: DetectionCandidate(x=200.0, y=140.0, w=420.0, h=780.0, confidence=0.88),
+            },
+            detector_backend="yolo_ultralytics_cpu",
+            track_source="yolo_person_detector",
+            warnings=[
+                ServiceWarning(
+                    code="BODY_DETECTION_GPU_FALLBACK_CPU",
+                    message="YOLO GPU inference failed and body detection retried on CPU.",
+                    step="body_detection",
+                )
+            ],
+        )
 
         response = self.service.run(build_context(self.request, self.store))
         payload = self.store.download_json(self.request.expected_outputs["body_tracks_raw"])
 
         self.assertEqual(response.outputs["body_tracks_raw"], self.request.expected_outputs["body_tracks_raw"])
         self.assertEqual(payload["coordinate_space"], "source")
-        self.assertEqual(payload["detector_backend"], "hog_person_detector")
+        self.assertEqual(payload["detector_backend"], "yolo_ultralytics_cpu")
         self.assertEqual(payload["proxy_resolution"], {"width": 960, "height": 540})
         self.assertEqual(len(payload["tracks"]), 3)
         self.assertEqual(payload["tracks"][0]["frame_index"], 0)
         self.assertEqual(payload["tracks"][0]["center"], {"x": 300.0, "y": 520.0})
+        self.assertEqual(payload["tracks"][0]["source"], "yolo_person_detector")
         self.assertFalse(payload["tracks"][0]["missing"])
         self.assertTrue(payload["tracks"][1]["missing"])
         self.assertEqual(payload["tracks"][1]["center"], {"x": 960.0, "y": 540.0})
         self.assertEqual(payload["detection_summary"], {"detected_frames": 2, "missing_frames": 1})
-        self.assertEqual(response.warnings[0].code, "BODY_DETECTION_MISSING_FRAMES")
+        self.assertEqual(response.warnings[0].code, "BODY_DETECTION_GPU_FALLBACK_CPU")
+        self.assertEqual(response.warnings[1].code, "BODY_DETECTION_MISSING_FRAMES")

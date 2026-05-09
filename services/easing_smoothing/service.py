@@ -93,6 +93,7 @@ def smooth_keyframes(
     max_x = max(0.0, float(source_width - crop_width))
     alpha = max(0.0, min(1.0, 1.0 - float(smoothing_strength)))
     eased_alpha = interpolate(0.0, 1.0, alpha, easing=easing) if alpha > 0 else 0.0
+    effective_dead_zone_px = min(max(0.0, dead_zone_px), crop_width * 0.2)
 
     smoothed: list[dict[str, Any]] = []
     last_x: float | None = None
@@ -102,12 +103,23 @@ def smooth_keyframes(
         target_x = float(frame.get("x") or 0.0)
         target_y = float(frame.get("y") or 0.0)
         timestamp = float(frame.get("t") or 0.0)
+        current_index = len(smoothed)
 
         if last_x is None:
             smoothed_x = target_x
         else:
             delta = target_x - last_x
-            if abs(delta) <= dead_zone_px:
+            if _should_snap_to_target(
+                keyframes=keyframes,
+                index=current_index,
+                last_x=last_x,
+                target_x=target_x,
+                crop_width=crop_width,
+                effective_dead_zone_px=effective_dead_zone_px,
+            ):
+                smoothed_x = target_x
+                last_velocity = 0.0
+            elif abs(delta) <= effective_dead_zone_px:
                 smoothed_x = last_x
             else:
                 proposed_x = last_x + (delta * eased_alpha)
@@ -135,3 +147,24 @@ def smooth_keyframes(
 
 def _clamp(value: float, lower: float, upper: float) -> float:
     return min(max(value, lower), upper)
+
+
+def _should_snap_to_target(
+    *,
+    keyframes: list[dict[str, Any]],
+    index: int,
+    last_x: float,
+    target_x: float,
+    crop_width: int,
+    effective_dead_zone_px: float,
+) -> bool:
+    jump_size = abs(target_x - last_x)
+    if jump_size < max(effective_dead_zone_px * 2.0, crop_width * 0.45):
+        return False
+
+    if index + 1 >= len(keyframes):
+        return False
+
+    next_target_x = float(keyframes[index + 1].get("x") or 0.0)
+    confirmation_window = max(effective_dead_zone_px, crop_width * 0.15)
+    return abs(next_target_x - target_x) <= confirmation_window

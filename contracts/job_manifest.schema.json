@@ -159,11 +159,14 @@
                     "type": "object",
                     "additionalProperties": false,
                     "required": [
-                        "sample_fps",
                         "proxy_height"
                     ],
                     "properties": {
                         "sample_fps": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "sample_every_n_source_frames": {
                             "type": "integer",
                             "minimum": 1
                         },
@@ -190,6 +193,25 @@
                             "type": "number",
                             "minimum": 0,
                             "maximum": 1
+                        },
+                        "model_path": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "device_preference": {
+                            "type": "string",
+                            "enum": [
+                                "gpu_first",
+                                "cpu"
+                            ]
+                        },
+                        "image_size": {
+                            "type": "integer",
+                            "minimum": 32
+                        },
+                        "person_class_id": {
+                            "type": "integer",
+                            "minimum": 0
                         }
                     }
                 },

@@ -14,11 +14,14 @@ the kept ranges so audio stays in sync with video after dead-air removal.
 
 from __future__ import annotations
 
+import bisect
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
+
+import cv2
 
 from services.common.media import probe_video_bytes
 from services.common.runtime import RunResponse
@@ -47,6 +50,7 @@ class FFmpegRendererService:
             raise ValueError("artifact_manifest is missing render_plan for ffmpeg_renderer")
 
         plan = context.read_json(plan_key)
+        raw_tracks = self._raw_tracks(context, artifact_manifest)
         source_key = plan.get("source_video", {}).get("object_key")
         if not isinstance(source_key, str) or not context.exists(source_key):
             raise ValueError("render_plan is missing valid source_video.object_key")
@@ -78,6 +82,7 @@ class FFmpegRendererService:
         with tempfile.TemporaryDirectory() as tmp:
             src_path = Path(tmp) / "source.mp4"
             out_path = Path(tmp) / "out.mp4"
+            overlay_path = Path(tmp) / "source_overlay.mp4"
             src_path.write_bytes(source_bytes)
 
             if render_mode == "smooth_crop_with_cuts":
@@ -116,11 +121,25 @@ class FFmpegRendererService:
                     audio_policy=str(plan.get("audio_policy") or "copy_if_possible_else_aac"),
                 )
 
+            self._render_source_overlay(
+                src_path=src_path,
+                out_path=overlay_path,
+                plan=plan,
+                raw_tracks=raw_tracks,
+                source_bytes=source_bytes,
+            )
+
             output_bytes = out_path.read_bytes()
+            overlay_bytes = overlay_path.read_bytes()
 
         out_key = context.expected_output_key("final_9x16")
+        overlay_key = context.expected_output_key("source_overlay")
         context.write_bytes(out_key, output_bytes, content_type="video/mp4")
-        return RunResponse(service_id=self.service_id, outputs={"final_9x16": out_key})
+        context.write_bytes(overlay_key, overlay_bytes, content_type="video/mp4")
+        return RunResponse(
+            service_id=self.service_id,
+            outputs={"final_9x16": out_key, "source_overlay": overlay_key},
+        )
 
     def _ffmpeg_config(self, context: ServiceContext) -> dict[str, Any]:
         defaults = {
@@ -135,6 +154,13 @@ class FFmpegRendererService:
         if not key or not context.exists(key):
             raise ValueError("request is missing artifact_manifest for ffmpeg_renderer")
         return context.read_json(key)
+
+    def _raw_tracks(self, context: ServiceContext, artifact_manifest: dict[str, Any]) -> dict[str, Any]:
+        raw_entry = artifact_manifest.get("artifacts", {}).get("body_tracks_raw", {})
+        raw_key = raw_entry.get("object_key") if isinstance(raw_entry, dict) else None
+        if not isinstance(raw_key, str) or not context.exists(raw_key):
+            raise ValueError("artifact_manifest is missing body_tracks_raw for ffmpeg_renderer")
+        return context.read_json(raw_key)
 
     def _render_static_crop(
         self,
@@ -473,6 +499,239 @@ class FFmpegRendererService:
             str(out_path),
         ]
         self._run_ffmpeg(cmd)
+
+    def _render_source_overlay(
+        self,
+        *,
+        src_path: Path,
+        out_path: Path,
+        plan: dict[str, Any],
+        raw_tracks: dict[str, Any],
+        source_bytes: bytes,
+    ) -> None:
+        capture = cv2.VideoCapture(str(src_path))
+        if not capture.isOpened():
+            raise ValueError("failed to open source video for overlay rendering")
+
+        frame_width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+        frame_height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+        fps = float(capture.get(cv2.CAP_PROP_FPS) or plan.get("metadata", {}).get("fps") or 0.0)
+        if frame_width <= 0 or frame_height <= 0:
+            capture.release()
+            raise ValueError("source video has invalid dimensions for overlay rendering")
+        if fps <= 0:
+            capture.release()
+            raise ValueError("source video has invalid fps for overlay rendering")
+
+        temp_video_path = out_path.with_suffix(".video.mp4")
+        writer = cv2.VideoWriter(
+            str(temp_video_path),
+            cv2.VideoWriter_fourcc(*"mp4v"),
+            fps,
+            (frame_width, frame_height),
+        )
+        if not writer.isOpened():
+            capture.release()
+            raise ValueError("failed to create overlay video writer")
+
+        crop_plan = plan.get("crop_plan") or {}
+        crop_width = int(crop_plan.get("crop_width") or 0)
+        crop_height = int(crop_plan.get("crop_height") or 0)
+        keyframes = crop_plan.get("keyframes") or []
+        if crop_width <= 0 or crop_height <= 0 or not isinstance(keyframes, list) or not keyframes:
+            capture.release()
+            writer.release()
+            raise ValueError("render_plan crop_plan is incomplete for overlay rendering")
+
+        sorted_keyframes = sorted(
+            [keyframe for keyframe in keyframes if isinstance(keyframe, dict)],
+            key=lambda keyframe: float(keyframe.get("t") or 0.0),
+        )
+        tracks = [track for track in raw_tracks.get("tracks", []) if isinstance(track, dict)]
+        track_times = [float(track.get("t") or 0.0) for track in tracks]
+
+        frame_index = 0
+        while True:
+            ok, frame = capture.read()
+            if not ok:
+                break
+
+            current_t = frame_index / fps
+            track = self._track_for_time(tracks, track_times, current_t)
+            crop_box = self._crop_box_for_time(
+                keyframes=sorted_keyframes,
+                t=current_t,
+                crop_width=crop_width,
+                crop_height=crop_height,
+                frame_width=frame_width,
+                frame_height=frame_height,
+            )
+
+            self._draw_overlay(frame, track=track, crop_box=crop_box)
+            writer.write(frame)
+            frame_index += 1
+
+        capture.release()
+        writer.release()
+
+        self._encode_overlay_for_web(
+            src_path=src_path,
+            silent_video_path=temp_video_path,
+            out_path=out_path,
+            audio_policy=str(plan.get("audio_policy") or "copy_if_possible_else_aac"),
+            audio_codec="aac",
+            probe=probe_video_bytes(source_bytes),
+        )
+
+    def _encode_overlay_for_web(
+        self,
+        *,
+        src_path: Path,
+        silent_video_path: Path,
+        out_path: Path,
+        audio_policy: str,
+        audio_codec: str,
+        probe: dict[str, Any],
+    ) -> None:
+        cmd: list[str] = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(silent_video_path),
+        ]
+
+        if _has_audio_stream(probe):
+            cmd.extend([
+                "-i",
+                str(src_path),
+                "-map",
+                "0:v:0",
+                "-map",
+                "1:a:0",
+                "-shortest",
+            ])
+        else:
+            cmd.append("-an")
+
+        cmd.extend([
+            "-c:v",
+            "libx264",
+            "-preset",
+            "fast",
+            "-crf",
+            "23",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+        ])
+
+        if _has_audio_stream(probe):
+            if audio_policy == "aac_transcode":
+                cmd.extend(["-c:a", audio_codec, "-b:a", "192k"])
+            else:
+                cmd.extend(["-c:a", "copy"])
+
+        cmd.append(str(out_path))
+        self._run_ffmpeg(cmd)
+
+    def _track_for_time(
+        self,
+        tracks: list[dict[str, Any]],
+        track_times: list[float],
+        t: float,
+    ) -> dict[str, Any] | None:
+        if not track_times:
+            return None
+
+        index = bisect.bisect_right(track_times, t) - 1
+        if index < 0:
+            return tracks[0]
+        return tracks[index]
+
+    def _crop_box_for_time(
+        self,
+        *,
+        keyframes: list[dict[str, Any]],
+        t: float,
+        crop_width: int,
+        crop_height: int,
+        frame_width: int,
+        frame_height: int,
+    ) -> tuple[int, int, int, int]:
+        keyframe_times = [float(keyframe.get("t") or 0.0) for keyframe in keyframes]
+        index = max(0, bisect.bisect_right(keyframe_times, t) - 1)
+        keyframe = keyframes[index]
+
+        x = int(round(float(keyframe.get("x") or 0.0)))
+        y = int(round(float(keyframe.get("y") or 0.0)))
+        x = max(0, min(x, max(0, frame_width - crop_width)))
+        y = max(0, min(y, max(0, frame_height - crop_height)))
+        return x, y, crop_width, crop_height
+
+    def _draw_overlay(
+        self,
+        frame: Any,
+        *,
+        track: dict[str, Any] | None,
+        crop_box: tuple[int, int, int, int],
+    ) -> None:
+        crop_x, crop_y, crop_width, crop_height = crop_box
+        frame_height, frame_width = frame.shape[:2]
+        line_thickness = max(2, min(frame_width, frame_height) // 240)
+
+        cv2.rectangle(
+            frame,
+            (crop_x, crop_y),
+            (crop_x + crop_width, crop_y + crop_height),
+            (0, 165, 255),
+            line_thickness * 2,
+        )
+        self._draw_label(frame, "planned crop", crop_x, max(24, crop_y - 10), (0, 165, 255))
+
+        if not track or track.get("missing"):
+            return
+
+        bbox = track.get("bbox") or {}
+        x = int(round(float(bbox.get("x") or 0.0)))
+        y = int(round(float(bbox.get("y") or 0.0)))
+        width = int(round(float(bbox.get("w") or 0.0)))
+        height = int(round(float(bbox.get("h") or 0.0)))
+        if width <= 0 or height <= 0:
+            return
+
+        cv2.rectangle(frame, (x, y), (x + width, y + height), (80, 220, 100), line_thickness)
+        label = str(track.get("source") or "person")
+        confidence = track.get("confidence")
+        if isinstance(confidence, (int, float)):
+            label = f"{label} {confidence:.2f}"
+        self._draw_label(frame, label, x, max(24, y - 10), (80, 220, 100))
+
+    def _draw_label(
+        self,
+        frame: Any,
+        text: str,
+        x: int,
+        y: int,
+        color: tuple[int, int, int],
+    ) -> None:
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = max(0.5, min(frame.shape[1], frame.shape[0]) / 900)
+        thickness = max(1, int(round(font_scale * 2)))
+        (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+        top_left = (x, max(0, y - text_height - baseline - 6))
+        bottom_right = (x + text_width + 8, y)
+        cv2.rectangle(frame, top_left, bottom_right, (18, 18, 18), -1)
+        cv2.putText(
+            frame,
+            text,
+            (x + 4, y - 4),
+            font,
+            font_scale,
+            color,
+            thickness,
+            cv2.LINE_AA,
+        )
 
     def _mux_audio_if_needed(
         self,

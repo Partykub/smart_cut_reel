@@ -19,6 +19,7 @@ from .contracts import repo_root
 from .manifest_manager import ManifestManager
 from .manifest_manager import utc_now
 from .object_store import ObjectStore
+from .path_resolver import artifact_path
 from .path_resolver import input_path
 from .path_resolver import job_prefix
 from .path_resolver import manifest_path
@@ -28,6 +29,7 @@ from .path_resolver import validate_job_id
 from .pipeline_runner import HttpPipelineRunner
 from .pipeline_runner import MockPipelineRunner
 from .pipeline_runner import PipelineRunner
+from .pipeline_runner import artifact_keys_for_step
 
 
 _JOB_MANIFEST_TEMPLATES_BY_PIPELINE_ID = {
@@ -103,6 +105,7 @@ class OrchestratorService:
 
     def get_job_status(self, job_id: str) -> dict[str, Any]:
         resolved_job_id = validate_job_id(job_id)
+        self._reconcile_completed_final_render(resolved_job_id)
         service_status = self.manifest_manager.read_service_status(resolved_job_id)
         artifact_manifest = self.manifest_manager.read_artifact_manifest(resolved_job_id)
         job_manifest = self.manifest_manager.read_job_manifest(resolved_job_id)
@@ -125,6 +128,35 @@ class OrchestratorService:
                 "output": output_path(resolved_job_id),
             },
         }
+
+    def _reconcile_completed_final_render(self, job_id: str) -> None:
+        service_status = self.manifest_manager.read_service_status(job_id)
+        if service_status.get("status") != "running":
+            return
+        if service_status.get("current_step") != "ffmpeg_renderer":
+            return
+
+        final_step = service_status["steps"].get("ffmpeg_renderer", {})
+        if final_step.get("status") != "running":
+            return
+
+        expected_artifacts = artifact_keys_for_step("ffmpeg_renderer")
+        if not all(self.store.exists(artifact_path(job_id, artifact_key)) for artifact_key in expected_artifacts):
+            return
+
+        artifact_manifest = self.manifest_manager.read_artifact_manifest(job_id)
+        for artifact_key in expected_artifacts:
+            if artifact_key not in artifact_manifest.get("artifacts", {}):
+                self.manifest_manager.register_artifact(job_id, artifact_key, produced_by="ffmpeg_renderer")
+
+        self.manifest_manager.set_step_state(
+            job_id,
+            "ffmpeg_renderer",
+            step_status="success",
+            finished_at=utc_now(),
+            overall_status="success",
+            current_step=None,
+        )
 
     def read_artifact_bytes(self, job_id: str, artifact_key: str) -> tuple[bytes, str]:
         """Return artifact bytes and Content-Type for a registered artifact."""
@@ -244,6 +276,22 @@ def _build_default_runner() -> PipelineRunner:
     if not raw_service_endpoints:
         return MockPipelineRunner()
 
+    raw_request_timeout_seconds = os.getenv("ORCHESTRATOR_REQUEST_TIMEOUT_SECONDS")
+    request_timeout_seconds: float | None
+    if raw_request_timeout_seconds is None or raw_request_timeout_seconds.strip() in {"", "0", "none", "None"}:
+        request_timeout_seconds = None
+    else:
+        try:
+            request_timeout_seconds = float(raw_request_timeout_seconds)
+        except ValueError as exc:
+            raise RuntimeError(
+                "ORCHESTRATOR_REQUEST_TIMEOUT_SECONDS must be a number, or 0/none to disable the timeout."
+            ) from exc
+        if request_timeout_seconds <= 0:
+            raise RuntimeError(
+                "ORCHESTRATOR_REQUEST_TIMEOUT_SECONDS must be a positive number, or 0/none to disable the timeout."
+            )
+
     try:
         service_endpoints = json.loads(raw_service_endpoints)
     except json.JSONDecodeError as exc:
@@ -265,5 +313,6 @@ def _build_default_runner() -> PipelineRunner:
     return HttpPipelineRunner(
         service_endpoints=service_endpoints,
         minio_bucket=os.getenv("ORCHESTRATOR_MINIO_BUCKET", "smart-cut"),
+        request_timeout_seconds=request_timeout_seconds,
         step_timeouts_seconds=step_timeouts,
     )

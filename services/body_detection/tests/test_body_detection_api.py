@@ -7,6 +7,7 @@ from orchestrator.object_store import FilesystemObjectStore
 from services.body_detection.api import create_app
 from services.body_detection.service import BodyDetectionService
 from services.body_detection.service import DetectionCandidate
+from services.body_detection.service import DetectionRunResult
 
 
 class BodyDetectionApiTests(unittest.TestCase):
@@ -61,9 +62,14 @@ class BodyDetectionApiTests(unittest.TestCase):
 
     @patch.object(BodyDetectionService, "_detect_proxy_frames")
     def test_run_endpoint_returns_fallback_warning_and_writes_output(self, mock_detect_proxy_frames) -> None:
-        mock_detect_proxy_frames.return_value = {
-            0: DetectionCandidate(x=100.0, y=120.0, w=400.0, h=800.0, confidence=0.91),
-        }
+        mock_detect_proxy_frames.return_value = DetectionRunResult(
+            detections_by_frame={
+                0: DetectionCandidate(x=100.0, y=120.0, w=400.0, h=800.0, confidence=0.91),
+            },
+            detector_backend="yolo_ultralytics_cpu",
+            track_source="yolo_person_detector",
+            warnings=[],
+        )
 
         response = self.client.post(
             "/run",
@@ -87,7 +93,8 @@ class BodyDetectionApiTests(unittest.TestCase):
         self.assertEqual(payload["warnings"][0]["code"], "BODY_DETECTION_MISSING_FRAMES")
         output = self.store.download_json(self.output_key)
         self.assertEqual(len(output["tracks"]), 2)
-        self.assertEqual(output["detector_backend"], "hog_person_detector")
+        self.assertEqual(output["detector_backend"], "yolo_ultralytics_cpu")
         self.assertEqual(output["tracks"][0]["center"], {"x": 300.0, "y": 520.0})
+        self.assertEqual(output["tracks"][0]["source"], "yolo_person_detector")
         self.assertFalse(output["tracks"][0]["missing"])
         self.assertTrue(output["tracks"][1]["missing"])

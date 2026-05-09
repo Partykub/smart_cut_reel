@@ -37,12 +37,16 @@
     },
     "service_config": {
         "proxy_frame_sampling": {
-            "sample_fps": 5,
+            "sample_every_n_source_frames": 1,
             "proxy_height": 540
         },
         "body_detection": {
             "subject_selection_strategy": "nearest_previous_crop_center",
-            "min_confidence": 0.5
+            "min_confidence": 0.9,
+            "model_path": "yolov8m.pt",
+            "device_preference": "gpu_first",
+            "image_size": 640,
+            "person_class_id": 0
         },
         "track_interpolation": {
             "max_gap_fill_seconds": 1.0,
@@ -64,7 +68,7 @@
         "render_plan_compiler": {
             "crop_representation": "keyframe_list",
             "audio_policy": "copy_if_possible_else_aac",
-            "compiler_render_mode": "static_crop"
+            "compiler_render_mode": "smooth_crop"
         },
         "ffmpeg_renderer": {
             "video_codec": "libx264",

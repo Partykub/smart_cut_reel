@@ -97,6 +97,7 @@ ARTIFACT_PRODUCERS: dict[str, str] = {
     "reframe_plan_smooth": "easing_smoothing",
     "render_plan": "render_plan_compiler",
     "final_9x16": "ffmpeg_renderer",
+    "source_overlay": "ffmpeg_renderer",
 }
 
 ARTIFACT_CONTENT_TYPES: dict[str, str] = {
@@ -114,6 +115,7 @@ ARTIFACT_CONTENT_TYPES: dict[str, str] = {
     "reframe_plan_smooth": "application/json",
     "render_plan": "application/json",
     "final_9x16": "video/mp4",
+    "source_overlay": "video/mp4",
 }
 
 _SCHEMA_FILENAMES = {
