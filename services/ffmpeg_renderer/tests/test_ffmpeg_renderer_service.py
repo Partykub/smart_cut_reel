@@ -144,6 +144,66 @@ class FFmpegRendererServiceTests(unittest.TestCase):
 
 
 @unittest.skipUnless(_ffmpeg_available(), "ffmpeg not installed")
+class FFmpegRendererWithoutBodyTracksTests(unittest.TestCase):
+    """Phase 2/3 audio pipelines omit detection; overlay uses crop box only."""
+
+    def test_static_crop_without_body_tracks_raw(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        root = Path(temp_dir.name)
+        store = FilesystemObjectStore(root)
+        src_mp4 = root / "in.mp4"
+        _write_minimal_mp4(src_mp4)
+
+        store.upload_bytes(
+            "jobs/job_test/input/source.mp4",
+            src_mp4.read_bytes(),
+            content_type="video/mp4",
+        )
+        store.upload_json(
+            "jobs/job_test/artifacts/render_plan.json",
+            {
+                "schema_version": "1.0.0",
+                "job_id": "job_test",
+                "audio_policy": "copy_if_possible_else_aac",
+                "source_video": {"object_key": "jobs/job_test/input/source.mp4"},
+                "target_resolution": {"width": 108, "height": 192},
+                "metadata": {"duration": 1.0, "fps": 30.0},
+                "crop_plan": {
+                    "crop_width": 320,
+                    "crop_height": 180,
+                    "keyframes": [{"t": 0.0, "x": 0.0, "y": 0.0}],
+                },
+                "render_mode": "static_crop",
+            },
+        )
+        store.upload_json(
+            "jobs/job_test/manifests/artifact_manifest.json",
+            {
+                "artifacts": {
+                    "render_plan": {"object_key": "jobs/job_test/artifacts/render_plan.json"},
+                }
+            },
+        )
+        request = RunRequest(
+            job_id="job_test",
+            step_id="ffmpeg_renderer",
+            minio=RunMinIO(bucket="smart-cut", prefix="jobs/job_test/"),
+            inputs={
+                "artifact_manifest": "jobs/job_test/manifests/artifact_manifest.json",
+            },
+            expected_outputs={
+                "final_9x16": "jobs/job_test/outputs/final_9x16.mp4",
+                "source_overlay": "jobs/job_test/outputs/source_overlay.mp4",
+            },
+            config={"video_codec": "libx264", "audio_codec": "aac"},
+        )
+        FFmpegRendererService().run(build_context(request, store))
+        self.assertGreater(len(store.download_bytes(request.expected_outputs["final_9x16"])), 1000)
+        self.assertGreater(len(store.download_bytes(request.expected_outputs["source_overlay"])), 1000)
+        temp_dir.cleanup()
+
+
+@unittest.skipUnless(_ffmpeg_available(), "ffmpeg not installed")
 class FFmpegRendererSmoothCropWithCutsTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -235,6 +295,7 @@ class FFmpegRendererSmoothCropWithCutsTests(unittest.TestCase):
             },
             expected_outputs={
                 "final_9x16": "jobs/job_test/outputs/final_9x16.mp4",
+                "source_overlay": "jobs/job_test/outputs/source_overlay.mp4",
             },
             config={},
         )

@@ -75,7 +75,7 @@ class PathResolverTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             manifest_path("job_001", "timeline")
 
-    def test_phase2_audio_artifact_paths(self) -> None:
+    def test_dead_air_audio_artifact_paths(self) -> None:
         self.assertEqual(
             artifact_path("job_xyz", "extracted_audio"),
             "jobs/job_xyz/artifacts/extracted_audio.wav",

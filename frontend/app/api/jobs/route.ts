@@ -6,11 +6,18 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const formData = await request.formData();
+  const incoming = await request.formData();
+  // Rebuild FormData: forwarding the Request's FormData directly to `fetch` has
+  // been observed to drop non-file fields in some Node/undici + Next versions,
+  // which makes FastAPI fall back to default `pipeline_id` (reframe-only preset).
+  const outgoing = new FormData();
+  for (const [key, value] of incoming.entries()) {
+    outgoing.append(key, value);
+  }
 
   const upstream = await fetch(orchestratorUrl("/jobs"), {
     method: "POST",
-    body: formData,
+    body: outgoing,
   });
 
   return forwardJson(upstream);

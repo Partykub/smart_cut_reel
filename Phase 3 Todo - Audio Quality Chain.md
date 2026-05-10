@@ -1,6 +1,6 @@
 # Phase 3 Todo - Audio Quality Chain
 
-**Status:** ✅ DONE (Phase 3.A → 3.E core path) — pipeline `phase3_audio_quality_cut` (14 steps) ใช้งานได้จริง: Silero VAD v5 + ffmpeg denoise/loudnorm + faster-whisper word timestamps + filler-word cut. Phase 1/2 ยัง backward-compatible. ขั้นถัดไปที่ยังไม่ทำ: speaker diarization (3.F) และ mastering chain (3.G)
+**Status:** ✅ DONE (Phase 3.A → 3.E core path) — preset `reframe_16x9_to_9x16_audio_quality` (14 steps) ใช้งานได้จริง: Silero VAD v5 + ffmpeg denoise/loudnorm + faster-whisper word timestamps + filler-word cut. ขั้นถัดไปที่ยังไม่ทำ: speaker diarization (3.F) และ mastering chain (3.G)
 
 **Goal:** ยกระดับคุณภาพเสียงของ pipeline จาก MVP (energy VAD + raw audio) ขึ้นไปสู่ระดับ "production podcast" — ใส่ AI VAD, audio enhancement (denoise + LUFS normalize), ASR + word-level filler-word cut, และเปิดทาง diarization/mastering chain ใน phase ย่อยถัดไป  
 **Scope:** ขยาย Phase 2 (`Phase 2 Todo - Dead Air Cutting.md`) เพิ่ม service ใหม่ 2 ตัว (`audio_enhancement`, `transcription`) + swap VAD backend จาก energy → Silero v5 + เปิด toggle ตัด filler words. **ไม่ใช่** speaker diarization เต็มสูตร, ไม่ใช่ EQ/compression chain ครบ studio, ไม่ใช่ LLM editor, ไม่ใช่ multi-cam.
@@ -11,7 +11,7 @@
 
 ผู้ใช้สามารถ:
 
-1. Upload วิดีโอ + เลือก pipeline `phase3_audio_quality_cut`
+1. Upload วิดีโอ + เลือก pipeline `reframe_16x9_to_9x16_audio_quality`
 2. เปิด/ปิด feature `enhance_audio` (denoise + loudness normalize)
 3. เปิด/ปิด feature `remove_filler_words` (ตัด "เอ่อ", "อืม", "อ่า", "um", "uhh")
 4. ระบบ extract เสียง → enhance → Silero VAD → transcribe → cut plan (silence + filler) → render
@@ -250,15 +250,15 @@ Done when:
 
 ### 5.1 schema_version → `3.0.0`
 
-- `job_manifest.schema.json`: เพิ่ม `phase3_audio_quality_cut` ใน `pipeline_id` enum + `enhanced_audio` artifact + service_config blocks ใหม่
+- `job_manifest.schema.json`: เพิ่ม `reframe_16x9_to_9x16_audio_quality` ใน `pipeline_id` enum + `enhanced_audio` artifact + service_config blocks ใหม่
 - `artifact_manifest.schema.json`: เพิ่ม `enhancedAudioArtifact`, `transcriptArtifact`
-- `service_status.schema.json`: เพิ่ม `audio_enhancement`, `transcription` ใน step enum + `phase3Steps` (14 steps)
+- `service_status.schema.json`: เพิ่ม `audio_enhancement`, `transcription` ใน step enum — preset audio-quality มี 14 steps
 
-### 5.2 New `pipeline_id`: `phase3_audio_quality_cut`
+### 5.2 New `pipeline_id`: `reframe_16x9_to_9x16_audio_quality`
 
 ```json
 {
-  "pipeline_id": "phase3_audio_quality_cut",
+  "pipeline_id": "reframe_16x9_to_9x16_audio_quality",
   "steps": [
     "validation",
     "media_metadata",
@@ -306,7 +306,7 @@ Done when:
 - VAD บน clip noisy: F1 ≥ 0.9 (เทียบ energy F1 ~0.7)
 
 ### Engineering
-- Phase 1 + Phase 2 jobs ยังทำงานเหมือนเดิม (no regression)
+- preset reframe-only + dead-air ยังทำงานเหมือนเดิม (no regression)
 - ทุก service ใหม่ทดสอบแยกได้ผ่าน FastAPI TestClient
 - e2e test สร้าง clip มี HVAC noise + "uhh" 3 ครั้ง → output trim ตรงกับ cut_plan
 - Full pipeline 60s clip → จบใน <8 นาที CPU บน M-series
@@ -322,11 +322,11 @@ Done when:
 
 ### A — Orchestrator / Contracts
 
-- [x] P3-A01: Bump `job_manifest.schema.json` → `schema_version 3.0.0`, เพิ่ม `phase3_audio_quality_cut` pipeline_id, เพิ่ม `enabled_features.enhance_audio` + `remove_filler_words`, เพิ่ม service_config blocks: `audio_enhancement`, `transcription`, ขยาย `dead_air_cut_planning` config
+- [x] P3-A01: Bump `job_manifest.schema.json` → `schema_version 3.0.0`, เพิ่ม `reframe_16x9_to_9x16_audio_quality` pipeline_id, เพิ่ม `enabled_features.enhance_audio` + `remove_filler_words`, เพิ่ม service_config blocks: `audio_enhancement`, `transcription`, ขยาย `dead_air_cut_planning` config
 - [x] P3-A02: ขยาย `artifact_manifest.schema.json` → เพิ่ม `enhanced_audio`, `transcript`
-- [x] P3-A03: ขยาย `service_status.schema.json` → เพิ่ม step `audio_enhancement`, `transcription` + `phase3Steps` (14 steps)
-- [x] P3-A04: ขยาย `path_resolver.py` รู้จัก artifact ใหม่ 2 ตัว + `contracts.py` PHASE_3_PIPELINE_ID, PHASE_3_STEP_IDS, PIPELINE_STEPS_BY_ID, ARTIFACT_PRODUCERS, ARTIFACT_CONTENT_TYPES
-- [x] P3-A05: ขยาย `OrchestratorService` รองรับ pipeline_id phase3 + load template ใหม่ + `manifest_manager.create_initial_job_state` รองรับ 14 steps (เปลี่ยนชื่อ pipeline_id ให้สอดคล้อง: ใช้ดิสคริมิเนเตอร์ `oneOf` ใน schema เพื่อไม่กระทบ Phase 1/2)
+- [x] P3-A03: ขยาย `service_status.schema.json` → เพิ่ม step `audio_enhancement`, `transcription` (preset audio-quality = 14 steps)
+- [x] P3-A04: ขยาย `path_resolver.py` รู้จัก artifact ใหม่ 2 ตัว + `contracts.py` (`PIPELINE_ID_REFRAME_AUDIO_QUALITY`, `REFRAME_AUDIO_QUALITY_STEP_IDS`, `PIPELINE_STEPS_BY_ID`, `ARTIFACT_PRODUCERS`, `ARTIFACT_CONTENT_TYPES`)
+- [x] P3-A05: ขยาย `OrchestratorService` รองรับ preset `reframe_16x9_to_9x16_audio_quality` + load template ใหม่ + `manifest_manager.create_initial_job_state` รองรับ 14 steps (`oneOf` ใน schema แยก preset reframe-only / dead-air / audio-quality)
 - [x] P3-A06: เพิ่ม env `ORCHESTRATOR_SERVICE_ENDPOINTS` 2 entries ใหม่ + `scripts/start_local_stack.sh` start ports 8022/8023
 
 ### M — Audio Enhancement
@@ -351,20 +351,20 @@ Done when:
 ### L — Dead Air Cut Planning (extend)
 
 - [x] P3-L01: รับ `transcript.json` artifact (optional) + ขยาย algorithm ตัด filler words ออกจาก keep_segments (split keep segment ได้ถ้า filler อยู่ตรงกลาง)
-- [x] P3-L02: ขยาย metrics: `removed_silence_seconds`, `removed_filler_seconds`, `filler_word_count` + tests รวม Phase 2 backward-compat
+- [x] P3-L02: ขยาย metrics: `removed_silence_seconds`, `removed_filler_seconds`, `filler_word_count` + tests คงความเข้ากันได้กับ preset dead-air
 
 ### B — Frontend
 
-- [x] P3-B01: extend `lib/types.ts` — เพิ่ม StepName ใหม่, PHASE_3_STEP_ORDER, EnabledFeatures fields, Transcript types
+- [x] P3-B01: extend `lib/types.ts` — เพิ่ม StepName ใหม่, `STEP_ORDER_AUDIO_QUALITY`, EnabledFeatures fields, Transcript types
 - [x] P3-B02: UploadForm — toggle "Enhance audio" + "Cut filler words" + auto switch pipeline_id (ตามตารางผสม)
 - [x] P3-B03: StatusBoard render 14 step + badge `quality` สำหรับ `audio_enhancement` + `transcription`
 - [x] P3-B04: TranscriptCard component แสดง word + highlight filler word + `/api/jobs/[jobId]/artifacts/transcript` route ใช้ artifact proxy เดิม
 
 ### I — Integration / QA
 
-- [x] P3-I01: e2e test (`tests/integration/test_phase3_audio_quality_e2e.py`) — synthetic 9s clip → audio extraction → audio enhancement (real ffmpeg) → Silero VAD → transcription (mock model) → dead-air planning + filler cut
+- [x] P3-I01: e2e test (`tests/integration/test_audio_quality_e2e.py`) — synthetic 9s clip → audio extraction → audio enhancement (real ffmpeg) → Silero VAD → transcription (mock model) → dead-air planning + filler cut
 - [x] P3-I02: orchestrator + service unit/integration tests ครบ — 91 test ผ่านทั้งหมด (74 unit + 17 integration)
-- [x] P3-I03: live stack smoke — บูต 14 service + orchestrator port 8000-8023 ผ่าน `start_local_stack.sh --detach`; create job ด้วย pipeline_id ทั้ง 3 phase ผ่านทั้งหมด
+- [x] P3-I03: live stack smoke — บูต 14 service + orchestrator port 8000-8023 ผ่าน `start_local_stack.sh --detach`; create job ด้วย `pipeline_id` ทั้งสาม preset (`reframe_16x9_to_9x16`, `reframe_16x9_to_9x16_dead_air`, `reframe_16x9_to_9x16_audio_quality`) ผ่านทั้งหมด
 
 ## 8. Dependency กลางของ Phase 3
 

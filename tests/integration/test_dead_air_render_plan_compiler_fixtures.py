@@ -1,6 +1,6 @@
-"""Drive the Phase 2 render-plan compiler with the canned fixtures.
+"""Drive the render-plan compiler with the canned dead-air fixtures.
 
-This test wires the fixtures from ``fixtures/phase2/{heavy_cut,light_cut,no_cut}``
+This test wires the fixtures from ``fixtures/dead_air/{heavy_cut,light_cut,no_cut}``
 through ``RenderPlanCompilerService`` to confirm the compiler emits a
 ``render_plan.json`` whose:
 
@@ -27,7 +27,7 @@ from services.common.runtime import build_context
 from services.render_plan_compiler.service import RenderPlanCompilerService
 
 
-FIXTURE_ROOT = Path(__file__).resolve().parents[2] / "fixtures" / "phase2"
+FIXTURE_ROOT = Path(__file__).resolve().parents[2] / "fixtures" / "dead_air"
 
 
 def _load(variant: str, name: str) -> dict:
@@ -35,7 +35,7 @@ def _load(variant: str, name: str) -> dict:
 
 
 class _FixtureHarness:
-    """Stage one Phase 2 fixture into a Filesystem-backed object store."""
+    """Stage one dead-air fixture variant into a Filesystem-backed object store."""
 
     def __init__(self, variant: str, root: Path) -> None:
         self.variant = variant
@@ -135,7 +135,7 @@ class _FixtureHarness:
         )
 
 
-class Phase2RenderPlanCompilerFixtureTests(unittest.TestCase):
+class DeadAirRenderPlanCompilerFixtureTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)

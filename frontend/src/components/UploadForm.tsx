@@ -5,9 +5,9 @@ import { useState, useTransition, type FormEvent } from "react";
 
 import { createJob } from "@/lib/api";
 import {
-  PHASE_1_PIPELINE_ID,
-  PHASE_2_PIPELINE_ID,
-  PHASE_3_PIPELINE_ID,
+  PIPELINE_ID_REFRAME_AUDIO_QUALITY,
+  PIPELINE_ID_REFRAME_DEAD_AIR,
+  PIPELINE_ID_REFRAME_ONLY,
   type PipelineId,
 } from "@/lib/types";
 
@@ -17,14 +17,58 @@ type ToggleState = {
   removeFillerWords: boolean;
 };
 
+type PresetInfo = {
+  label: string;
+  accent: "emerald" | "violet" | "amber";
+  steps: number;
+  summary: string;
+  bullets: string[];
+};
+
+const PRESET_INFO: Record<PipelineId, PresetInfo> = {
+  "reframe_16x9_to_9x16": {
+    label: "Smooth vertical reframe",
+    accent: "emerald",
+    steps: 9,
+    summary:
+      "Vision-only pipeline: sample frames, detect subject, plan crop, smooth motion, render one 9:16 MP4.",
+    bullets: [
+      "No audio extraction or silence cuts",
+      "Best when your timeline is already tight",
+    ],
+  },
+  "reframe_16x9_to_9x16_dead_air": {
+    label: "Reframe + dead air",
+    accent: "violet",
+    steps: 12,
+    summary:
+      "Adds an audio chain before vision: WAV extract → voice activity detection → cut plan, then the same reframe/render path with trims.",
+    bullets: [
+      "Trims long silent stretches (configurable in the orchestrator)",
+      "Requires dead-air chain when enhancing audio or cutting fillers",
+    ],
+  },
+  "reframe_16x9_to_9x16_audio_quality": {
+    label: "Full audio-quality chain",
+    accent: "amber",
+    steps: 14,
+    summary:
+      "Dead-air base plus enhancement (denoise / loudness), Silero VAD on enhanced audio, transcription, and optional filler-word removal from the cut plan.",
+    bullets: [
+      "Longer runs — includes ASR when removing fillers",
+      "Best for noisy rooms and verbal clutter",
+    ],
+  },
+};
+
 function selectPipelineId(state: ToggleState): PipelineId {
   if (state.enhanceAudio || state.removeFillerWords) {
-    return PHASE_3_PIPELINE_ID;
+    return PIPELINE_ID_REFRAME_AUDIO_QUALITY;
   }
   if (state.removeDeadAir) {
-    return PHASE_2_PIPELINE_ID;
+    return PIPELINE_ID_REFRAME_DEAD_AIR;
   }
-  return PHASE_1_PIPELINE_ID;
+  return PIPELINE_ID_REFRAME_ONLY;
 }
 
 function buildEnabledFeatures(state: ToggleState): Record<string, boolean> {
@@ -35,6 +79,18 @@ function buildEnabledFeatures(state: ToggleState): Record<string, boolean> {
   if (state.removeFillerWords) features.remove_filler_words = true;
   return features;
 }
+
+const ACCENT_RING: Record<PresetInfo["accent"], string> = {
+  emerald: "ring-emerald-500/35 border-emerald-500/25",
+  violet: "ring-violet-500/35 border-violet-500/25",
+  amber: "ring-amber-500/35 border-amber-500/25",
+};
+
+const ACCENT_DOT: Record<PresetInfo["accent"], string> = {
+  emerald: "bg-emerald-400",
+  violet: "bg-violet-400",
+  amber: "bg-amber-400",
+};
 
 export function UploadForm() {
   const router = useRouter();
@@ -56,13 +112,14 @@ export function UploadForm() {
 
   const pipelineId = selectPipelineId(toggleState);
   const enabledFeatures = buildEnabledFeatures(toggleState);
+  const preset = PRESET_INFO[pipelineId];
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
 
     if (!file) {
-      setError("กรุณาเลือกไฟล์วิดีโอก่อน");
+      setError("Choose a video file first.");
       return;
     }
 
@@ -76,7 +133,7 @@ export function UploadForm() {
         const result = await createJob(formData);
         router.push(`/jobs/${result.job_id}`);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "สร้างงานไม่สำเร็จ");
+        setError(err instanceof Error ? err.message : "Could not create job.");
       }
     });
   };
@@ -84,14 +141,21 @@ export function UploadForm() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="space-y-6 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 shadow-lg"
+      className="space-y-8 rounded-2xl border border-zinc-800/90 bg-zinc-900/55 p-6 shadow-xl ring-1 ring-white/[0.04] sm:p-8"
     >
+      <div className="space-y-2 border-b border-zinc-800/80 pb-6">
+        <h2 className="font-display text-xl font-semibold tracking-tight text-white">
+          Upload & options
+        </h2>
+        <p className="text-sm text-zinc-500">
+          Select a 16:9 source file, tune cuts and audio below, then start — you&apos;ll land on the
+          job dashboard with live steps and artifacts.
+        </p>
+      </div>
+
       <div className="space-y-2">
-        <label
-          htmlFor="source"
-          className="block text-sm font-medium text-zinc-300"
-        >
-          วิดีโอต้นทาง
+        <label htmlFor="source" className="block text-sm font-medium text-zinc-300">
+          Source video
         </label>
         <input
           id="source"
@@ -100,7 +164,7 @@ export function UploadForm() {
           accept="video/*"
           onChange={(event) => setFile(event.target.files?.[0] ?? null)}
           disabled={isPending}
-          className="block w-full text-sm text-zinc-300 file:mr-4 file:rounded-md file:border-0 file:bg-zinc-100 file:px-4 file:py-2 file:text-sm file:font-medium file:text-zinc-900 hover:file:bg-zinc-200 disabled:opacity-50"
+          className="block w-full text-sm text-zinc-300 file:mr-4 file:rounded-lg file:border-0 file:bg-zinc-100 file:px-4 file:py-2.5 file:text-sm file:font-medium file:text-zinc-900 hover:file:bg-white disabled:opacity-50"
         />
         {file ? (
           <p className="text-xs text-zinc-500">
@@ -109,9 +173,32 @@ export function UploadForm() {
         ) : null}
       </div>
 
-      <fieldset className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-950/40 p-4">
-        <legend className="px-2 text-xs font-semibold uppercase tracking-widest text-zinc-400">
-          ตัวเลือกการประมวลผล
+      <div
+        className={`rounded-xl border bg-zinc-950/50 p-5 ring-2 ring-inset ${ACCENT_RING[preset.accent]}`}
+      >
+        <div className="flex items-start gap-3">
+          <span
+            className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${ACCENT_DOT[preset.accent]}`}
+            aria-hidden
+          />
+          <div className="min-w-0 space-y-2">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">
+              <span className="font-display text-base font-semibold text-zinc-100">{preset.label}</span>
+              <span className="font-mono text-xs text-zinc-500">{preset.steps} steps</span>
+            </div>
+            <p className="text-sm leading-relaxed text-zinc-400">{preset.summary}</p>
+            <ul className="list-inside list-disc space-y-1 text-xs text-zinc-500 marker:text-zinc-600">
+              {preset.bullets.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <fieldset className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-950/35 p-5">
+        <legend className="px-1 font-display text-sm font-semibold text-zinc-200">
+          Video & audio cuts
         </legend>
 
         <ToggleRow
@@ -119,11 +206,11 @@ export function UploadForm() {
           checked={effectiveRemoveDeadAir}
           disabled={isPending || requiresDeadAir}
           onChange={(value) => setRemoveDeadAir(value)}
-          title="ตัดช่วงเงียบยาว"
-          subtitle="หาเสียงพูดด้วย Silero VAD แล้วตัดช่วงเงียบเกิน 0.8 วินาที (เช่น พักนาน หายใจยาว) ออกก่อนนำไปครอป"
+          title="Remove dead air (silence)"
+          subtitle="Extract audio, run Silero VAD, build a cut plan, then trim long silent gaps before reframing. Turns off only when neither enhancement nor filler-word removal is selected."
           hint={
             requiresDeadAir
-              ? "เปิดอยู่อัตโนมัติ เพราะ option ด้านล่างต้องใช้"
+              ? "Forced on — audio enhancement and filler cuts require this chain."
               : undefined
           }
         />
@@ -133,8 +220,8 @@ export function UploadForm() {
           checked={enhanceAudio}
           disabled={isPending}
           onChange={(value) => setEnhanceAudio(value)}
-          title="เพิ่มคุณภาพเสียง (Phase 3)"
-          subtitle="กรองเสียงต่ำ (highpass 80 Hz) + ลด noise (afftdn) + ปรับระดับเสียงตามมาตรฐาน EBU R128 ที่ -16 LUFS ก่อน VAD/ASR — ช่วยให้คลิปที่อัดในห้องดัง/ก้องตัดได้แม่นกว่าเดิม"
+          title="Enhance audio"
+          subtitle="High-pass, light denoise, and EBU R128-style loudness normalization before VAD / ASR — helps noisy rooms and uneven levels."
         />
 
         <ToggleRow
@@ -142,28 +229,31 @@ export function UploadForm() {
           checked={removeFillerWords}
           disabled={isPending}
           onChange={(value) => setRemoveFillerWords(value)}
-          title="ตัดคำลังเล (Phase 3)"
-          subtitle="ใช้ faster-whisper ถอดคำพร้อม timestamp แล้วตัดคำเช่น “เอ่อ / อืม / อ่า / อ่ะ / um / uh / er” ออกจาก keep segments — เพิ่ม 30s–2min ต่อคลิปเพราะต้องรัน ASR"
+          title="Remove filler words"
+          subtitle="faster-whisper with word timestamps; cuts common fillers (Thai + English). Adds noticeable CPU time per clip."
         />
-
-        <div className="space-y-1 pl-7 text-[11px] text-zinc-500">
-          <p>
-            pipeline ที่จะใช้:{" "}
-            <span className="font-mono text-zinc-400">{pipelineId}</span>
-          </p>
-          <p>
-            enabled_features:{" "}
-            <span className="font-mono text-zinc-400">
-              {JSON.stringify(enabledFeatures)}
-            </span>
-          </p>
-        </div>
       </fieldset>
+
+      <details className="rounded-lg border border-zinc-800/80 bg-zinc-950/25 px-4 py-3 text-xs text-zinc-500">
+        <summary className="cursor-pointer select-none font-medium text-zinc-400">
+          Technical · API payload (debug)
+        </summary>
+        <dl className="mt-3 space-y-2 font-mono text-[11px] leading-relaxed">
+          <div>
+            <dt className="text-zinc-600">pipeline_id</dt>
+            <dd className="text-zinc-400">{pipelineId}</dd>
+          </div>
+          <div>
+            <dt className="text-zinc-600">enabled_features</dt>
+            <dd className="break-all text-zinc-400">{JSON.stringify(enabledFeatures)}</dd>
+          </div>
+        </dl>
+      </details>
 
       {error ? (
         <p
           role="alert"
-          className="rounded-md border border-red-900/40 bg-red-950/40 px-3 py-2 text-sm text-red-300"
+          className="rounded-lg border border-red-900/50 bg-red-950/40 px-4 py-3 text-sm text-red-200"
         >
           {error}
         </p>
@@ -172,9 +262,9 @@ export function UploadForm() {
       <button
         type="submit"
         disabled={!file || isPending}
-        className="inline-flex items-center justify-center rounded-md bg-emerald-500 px-4 py-2 text-sm font-medium text-zinc-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+        className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-zinc-950 shadow-lg shadow-emerald-950/30 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400 disabled:shadow-none sm:w-auto sm:min-w-[200px]"
       >
-        {isPending ? "กำลังสร้างงาน..." : "เริ่มประมวลผล"}
+        {isPending ? "Creating job…" : "Upload & start pipeline"}
       </button>
     </form>
   );
@@ -214,10 +304,8 @@ function ToggleRow({
       />
       <span className="space-y-1">
         <span className="block font-medium text-zinc-100">{title}</span>
-        <span className="block text-xs text-zinc-400">{subtitle}</span>
-        {hint ? (
-          <span className="block text-[11px] italic text-zinc-500">{hint}</span>
-        ) : null}
+        <span className="block text-xs leading-relaxed text-zinc-400">{subtitle}</span>
+        {hint ? <span className="block text-[11px] italic text-zinc-500">{hint}</span> : null}
       </span>
     </label>
   );

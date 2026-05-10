@@ -18,10 +18,11 @@ export type StepStatus = "pending" | "running" | "success" | "failed";
 
 export type OverallStatus = StepStatus;
 
+/** Canonical pipeline presets returned by `GET …/status` (legacy IDs normalized server-side). */
 export type PipelineId =
-  | "phase1_smooth_reframe_16x9_to_9x16"
-  | "phase2_smooth_reframe_dead_air_cut"
-  | "phase3_audio_quality_cut";
+  | "reframe_16x9_to_9x16"
+  | "reframe_16x9_to_9x16_dead_air"
+  | "reframe_16x9_to_9x16_audio_quality";
 
 export interface StepState {
   status: StepStatus;
@@ -84,7 +85,7 @@ export interface JobStatusResponse {
   paths: JobPaths;
 }
 
-export const PHASE_1_STEP_ORDER: StepName[] = [
+export const STEP_ORDER_REFRAME_ONLY: StepName[] = [
   "validation",
   "media_metadata",
   "proxy_frame_sampling",
@@ -96,7 +97,7 @@ export const PHASE_1_STEP_ORDER: StepName[] = [
   "ffmpeg_renderer",
 ];
 
-export const PHASE_2_STEP_ORDER: StepName[] = [
+export const STEP_ORDER_DEAD_AIR: StepName[] = [
   "validation",
   "media_metadata",
   "audio_extraction",
@@ -111,7 +112,7 @@ export const PHASE_2_STEP_ORDER: StepName[] = [
   "ffmpeg_renderer",
 ];
 
-export const PHASE_3_STEP_ORDER: StepName[] = [
+export const STEP_ORDER_AUDIO_QUALITY: StepName[] = [
   "validation",
   "media_metadata",
   "audio_extraction",
@@ -128,17 +129,28 @@ export const PHASE_3_STEP_ORDER: StepName[] = [
   "ffmpeg_renderer",
 ];
 
-export const PHASE_1_PIPELINE_ID: PipelineId = "phase1_smooth_reframe_16x9_to_9x16";
-export const PHASE_2_PIPELINE_ID: PipelineId = "phase2_smooth_reframe_dead_air_cut";
-export const PHASE_3_PIPELINE_ID: PipelineId = "phase3_audio_quality_cut";
+/** Default preset: smooth vertical reframe only */
+export const PIPELINE_ID_REFRAME_ONLY: PipelineId = "reframe_16x9_to_9x16";
+/** Reframe + dead-air cutting (VAD + cut plan before vision). */
+export const PIPELINE_ID_REFRAME_DEAD_AIR: PipelineId = "reframe_16x9_to_9x16_dead_air";
+/** Reframe + dead air + audio enhancement + ASR / filler cuts. */
+export const PIPELINE_ID_REFRAME_AUDIO_QUALITY: PipelineId = "reframe_16x9_to_9x16_audio_quality";
 
-export const STEP_ORDER = PHASE_1_STEP_ORDER;
+/** Fallback step order when API omits `pipeline.steps` */
+export const STEP_ORDER = STEP_ORDER_REFRAME_ONLY;
 
 export const TERMINAL_STATUSES: OverallStatus[] = ["success", "failed"];
 
 export function isTerminalStatus(status: OverallStatus): boolean {
   return TERMINAL_STATUSES.includes(status);
 }
+
+export const PIPELINE_IDS_WITH_DEAD_AIR: PipelineId[] = [
+  PIPELINE_ID_REFRAME_DEAD_AIR,
+  PIPELINE_ID_REFRAME_AUDIO_QUALITY,
+];
+
+export const PIPELINE_IDS_WITH_AUDIO_QUALITY: PipelineId[] = [PIPELINE_ID_REFRAME_AUDIO_QUALITY];
 
 export interface CutPlanSegment {
   source_start: number;

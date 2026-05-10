@@ -11,9 +11,10 @@ from uuid import uuid4
 
 from .artifact_helper import ArtifactHelper
 from .contracts import ARTIFACT_CONTENT_TYPES
-from .contracts import PHASE_1_PIPELINE_ID
-from .contracts import PHASE_2_PIPELINE_ID
-from .contracts import PHASE_3_PIPELINE_ID
+from .contracts import KNOWN_PIPELINE_IDS
+from .contracts import PIPELINE_ID_REFRAME_16X9_TO_9X16
+from .contracts import PIPELINE_ID_REFRAME_AUDIO_QUALITY
+from .contracts import PIPELINE_ID_REFRAME_DEAD_AIR
 from .contracts import PIPELINE_STEPS_BY_ID
 from .contracts import repo_root
 from .manifest_manager import ManifestManager
@@ -33,9 +34,9 @@ from .pipeline_runner import artifact_keys_for_step
 
 
 _JOB_MANIFEST_TEMPLATES_BY_PIPELINE_ID = {
-    PHASE_1_PIPELINE_ID: "contracts/examples/job_manifest.sample.json",
-    PHASE_2_PIPELINE_ID: "contracts/examples/job_manifest.phase2.sample.json",
-    PHASE_3_PIPELINE_ID: "contracts/examples/job_manifest.phase3.sample.json",
+    PIPELINE_ID_REFRAME_16X9_TO_9X16: "contracts/examples/job_manifest.reframe_16x9_to_9x16.sample.json",
+    PIPELINE_ID_REFRAME_DEAD_AIR: "contracts/examples/job_manifest.reframe_16x9_to_9x16_dead_air.sample.json",
+    PIPELINE_ID_REFRAME_AUDIO_QUALITY: "contracts/examples/job_manifest.reframe_16x9_to_9x16_audio_quality.sample.json",
 }
 
 
@@ -57,7 +58,7 @@ class OrchestratorService:
         }
         if job_manifest_template is not None:
             override_pipeline_id = job_manifest_template.get("pipeline", {}).get(
-                "pipeline_id", PHASE_1_PIPELINE_ID
+                "pipeline_id", PIPELINE_ID_REFRAME_16X9_TO_9X16
             )
             self.job_manifest_templates[override_pipeline_id] = job_manifest_template
 
@@ -69,13 +70,13 @@ class OrchestratorService:
         content_type: str = "video/mp4",
         created_by: str = "debug_frontend",
         job_id: str | None = None,
-        pipeline_id: str = PHASE_1_PIPELINE_ID,
+        pipeline_id: str = PIPELINE_ID_REFRAME_16X9_TO_9X16,
         enabled_features: dict[str, bool] | None = None,
     ) -> dict[str, Any]:
         if not source_bytes:
             raise ValueError("source_bytes must not be empty.")
-        if pipeline_id not in PIPELINE_STEPS_BY_ID:
-            allowed = ", ".join(sorted(PIPELINE_STEPS_BY_ID))
+        if pipeline_id not in KNOWN_PIPELINE_IDS:
+            allowed = ", ".join(sorted(KNOWN_PIPELINE_IDS))
             raise ValueError(
                 f"Unknown pipeline_id '{pipeline_id}'. Expected one of: {allowed}."
             )
@@ -110,12 +111,13 @@ class OrchestratorService:
         artifact_manifest = self.manifest_manager.read_artifact_manifest(resolved_job_id)
         job_manifest = self.manifest_manager.read_job_manifest(resolved_job_id)
         pipeline = job_manifest.get("pipeline", {})
+        raw_pipeline_id = pipeline.get("pipeline_id", PIPELINE_ID_REFRAME_16X9_TO_9X16)
         return {
             "job_id": resolved_job_id,
             "service_status": service_status,
             "artifacts": artifact_manifest["artifacts"],
             "pipeline": {
-                "pipeline_id": pipeline.get("pipeline_id", PHASE_1_PIPELINE_ID),
+                "pipeline_id": str(raw_pipeline_id),
                 "steps": pipeline.get("steps", []),
             },
             "enabled_features": job_manifest.get("enabled_features", {}),
@@ -212,6 +214,8 @@ class OrchestratorService:
         manifest["input"]["source_video"]["content_type"] = content_type
         manifest["input"]["source_video"]["checksum_sha256"] = checksum_sha256
         manifest["target_output"]["object_key"] = output_path(job_id)
+        manifest["pipeline"]["pipeline_id"] = pipeline_id
+        manifest["pipeline"]["steps"] = list(PIPELINE_STEPS_BY_ID[pipeline_id])
 
         if enabled_features_overrides:
             existing = manifest.get("enabled_features")

@@ -218,5 +218,76 @@ class RenderPlanCompilerSmoothCropWithCutsTests(unittest.TestCase):
         self.assertIn("cut_plan", str(ctx.exception))
 
 
+class RenderPlanCompilerFullFrameWithCutsTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.store = FilesystemObjectStore(Path(self.temp_dir.name))
+
+        self.store.upload_json(
+            "jobs/job_test/manifests/job_manifest.json",
+            {
+                "input": {"source_video": {"object_key": "jobs/job_test/input/source.mp4"}},
+                "target_output": {
+                    "object_key": "jobs/job_test/outputs/final_9x16.mp4",
+                    "resolution": {"width": 1080, "height": 1920},
+                },
+            },
+        )
+        self.store.upload_json(
+            "jobs/job_test/manifests/artifact_manifest.json",
+            {
+                "artifacts": {
+                    "metadata": {"object_key": "jobs/job_test/artifacts/metadata.json"},
+                    "cut_plan": {"object_key": "jobs/job_test/artifacts/cut_plan.json"},
+                }
+            },
+        )
+        self.store.upload_json(
+            "jobs/job_test/artifacts/metadata.json",
+            {"job_id": "job_test", "width": 1920, "height": 1080, "fps": 30.0, "duration": 12.0},
+        )
+        self.store.upload_json(
+            "jobs/job_test/artifacts/cut_plan.json",
+            {
+                "feature_enabled": True,
+                "keep_segments": [
+                    {"source_start": 0.0, "source_end": 3.0},
+                    {"source_start": 6.0, "source_end": 12.0},
+                ],
+            },
+        )
+
+        self.request = RunRequest(
+            job_id="job_test",
+            step_id="render_plan_compiler",
+            minio=RunMinIO(bucket="smart-cut", prefix="jobs/job_test/"),
+            inputs={
+                "job_manifest": "jobs/job_test/manifests/job_manifest.json",
+                "artifact_manifest": "jobs/job_test/manifests/artifact_manifest.json",
+            },
+            expected_outputs={
+                "render_plan": "jobs/job_test/artifacts/render_plan.json",
+            },
+            config={
+                "crop_representation": "keyframe_list",
+                "audio_policy": "aac_transcode",
+                "compiler_render_mode": "full_frame_with_cuts",
+            },
+        )
+        self.service = RenderPlanCompilerService()
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def test_full_frame_emits_smooth_crop_with_cuts_without_reframe_artifact(self) -> None:
+        self.service.run(build_context(self.request, self.store))
+        payload = self.store.download_json(self.request.expected_outputs["render_plan"])
+
+        self.assertEqual(payload["render_mode"], "smooth_crop_with_cuts")
+        self.assertEqual(payload["crop_plan"]["crop_width"], 1920)
+        self.assertEqual(payload["crop_plan"]["crop_height"], 1080)
+        self.assertEqual(len(payload["segments"]), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

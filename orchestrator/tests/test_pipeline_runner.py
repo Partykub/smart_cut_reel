@@ -8,8 +8,8 @@ import httpx
 
 from orchestrator.contracts import ARTIFACT_CONTENT_TYPES
 from orchestrator.contracts import ARTIFACT_PRODUCERS
-from orchestrator.contracts import PHASE_2_PIPELINE_ID
-from orchestrator.contracts import PHASE_2_STEP_IDS
+from orchestrator.contracts import PIPELINE_ID_REFRAME_DEAD_AIR
+from orchestrator.contracts import REFRAME_DEAD_AIR_STEP_IDS
 from orchestrator.contracts import PIPELINE_STEP_IDS
 from orchestrator.object_store import FilesystemObjectStore
 from orchestrator.pipeline_runner import HttpPipelineRunner
@@ -89,12 +89,12 @@ class HttpPipelineRunnerTests(unittest.TestCase):
         self.assertEqual(seen_steps, list(PIPELINE_STEP_IDS))
         self.assertEqual(result["service_status"]["status"], "success")
         self.assertIsNone(result["service_status"]["current_step"])
-        phase1_artifact_keys = {
+        reframe_only_artifact_keys = {
             artifact_key
             for artifact_key, producer in ARTIFACT_PRODUCERS.items()
             if producer in PIPELINE_STEP_IDS
         }
-        self.assertEqual(set(result["artifacts"]), phase1_artifact_keys)
+        self.assertEqual(set(result["artifacts"]), reframe_only_artifact_keys)
         self.assertEqual(result["service_status"]["warnings"][0]["code"], "BODY_DETECTION_FALLBACK")
         self.assertEqual(result["service_status"]["warnings"][0]["step"], "body_detection")
 
@@ -371,7 +371,7 @@ class HttpPipelineRunnerTests(unittest.TestCase):
         }
 
 
-class HttpPipelineRunnerPhase2Tests(unittest.TestCase):
+class HttpPipelineRunnerDeadAirPresetTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.store = FilesystemObjectStore(Path(self.temp_dir.name))
@@ -379,7 +379,7 @@ class HttpPipelineRunnerPhase2Tests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
 
-    def test_phase2_runner_invokes_all_twelve_steps_in_order(self) -> None:
+    def test_dead_air_runner_invokes_all_twelve_steps_in_order(self) -> None:
         seen_steps: list[str] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -407,7 +407,7 @@ class HttpPipelineRunnerPhase2Tests(unittest.TestCase):
         transport = httpx.MockTransport(handler)
         runner = HttpPipelineRunner(
             service_endpoints={
-                step_id: f"http://{step_id}.service" for step_id in PHASE_2_STEP_IDS
+                step_id: f"http://{step_id}.service" for step_id in REFRAME_DEAD_AIR_STEP_IDS
             },
             minio_bucket="smart-cut",
             client_factory=lambda: httpx.Client(transport=transport),
@@ -417,23 +417,23 @@ class HttpPipelineRunnerPhase2Tests(unittest.TestCase):
         created = service.create_job(
             source_bytes=b"video-bytes",
             original_filename="clip.mp4",
-            job_id="job_phase2_runner_success",
-            pipeline_id=PHASE_2_PIPELINE_ID,
+            job_id="job_dead_air_runner_success",
+            pipeline_id=PIPELINE_ID_REFRAME_DEAD_AIR,
         )
         result = service.run_job(created["job_id"])
 
-        expected_phase2_artifacts = {
+        expected_dead_air_artifacts = {
             artifact_key
             for artifact_key, producer in ARTIFACT_PRODUCERS.items()
-            if producer in PHASE_2_STEP_IDS
+            if producer in REFRAME_DEAD_AIR_STEP_IDS
         }
-        self.assertEqual(seen_steps, list(PHASE_2_STEP_IDS))
+        self.assertEqual(seen_steps, list(REFRAME_DEAD_AIR_STEP_IDS))
         self.assertEqual(result["service_status"]["status"], "success")
-        self.assertEqual(set(result["artifacts"]), expected_phase2_artifacts)
-        self.assertEqual(result["pipeline"]["pipeline_id"], PHASE_2_PIPELINE_ID)
+        self.assertEqual(set(result["artifacts"]), expected_dead_air_artifacts)
+        self.assertEqual(result["pipeline"]["pipeline_id"], PIPELINE_ID_REFRAME_DEAD_AIR)
         self.assertEqual(result["enabled_features"], {"remove_dead_air": True})
 
-    def test_phase2_runner_passes_phase2_service_config_through_to_each_step(self) -> None:
+    def test_dead_air_runner_passes_preset_service_config_through_to_each_step(self) -> None:
         observed_configs: dict[str, dict] = {}
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -460,7 +460,7 @@ class HttpPipelineRunnerPhase2Tests(unittest.TestCase):
         transport = httpx.MockTransport(handler)
         runner = HttpPipelineRunner(
             service_endpoints={
-                step_id: f"http://{step_id}.service" for step_id in PHASE_2_STEP_IDS
+                step_id: f"http://{step_id}.service" for step_id in REFRAME_DEAD_AIR_STEP_IDS
             },
             minio_bucket="smart-cut",
             client_factory=lambda: httpx.Client(transport=transport),
@@ -470,8 +470,8 @@ class HttpPipelineRunnerPhase2Tests(unittest.TestCase):
         created = service.create_job(
             source_bytes=b"video-bytes",
             original_filename="clip.mp4",
-            job_id="job_phase2_runner_config",
-            pipeline_id=PHASE_2_PIPELINE_ID,
+            job_id="job_dead_air_runner_config",
+            pipeline_id=PIPELINE_ID_REFRAME_DEAD_AIR,
         )
         service.run_job(created["job_id"])
 

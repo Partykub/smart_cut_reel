@@ -1,4 +1,4 @@
-"""End-to-end smoke test for the Phase 3 audio quality chain.
+"""End-to-end smoke test for the audio-quality pipeline (`reframe_16x9_to_9x16_audio_quality`).
 
 Drives the new audio steps end-to-end on a synthetic 9-second clip:
 
@@ -125,12 +125,12 @@ def _generate_synthetic_clip(out_path: Path) -> None:
 
 
 @unittest.skipUnless(_FFMPEG and _FFPROBE, "ffmpeg/ffprobe not installed")
-class Phase3AudioQualityEndToEndTests(unittest.TestCase):
+class AudioQualityEndToEndTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.store = FilesystemObjectStore(self.root)
-        self.job_id = "job_phase3_e2e"
+        self.job_id = "job_audio_quality_e2e"
         self.prefix = f"jobs/{self.job_id}"
 
         src_path = self.root / "source.mp4"

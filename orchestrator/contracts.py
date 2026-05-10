@@ -1,12 +1,8 @@
 """Shared contract constants and schema validation helpers.
 
-Phase 1 covers nine sequential steps (16:9 → 9:16 smooth reframe). Phase 2
-inserts three audio-driven steps (audio extraction, voice activity detection,
-dead air cut planning) before the proxy/vision chain so the renderer can apply
-trim+crop+concat in one pass. Phase 3 inserts two additional steps
-(`audio_enhancement` between extraction and VAD, and `transcription` between
-VAD and dead-air cut planning) so the cut planner can also remove filler words
-detected from word-level ASR timestamps.
+Pipeline presets use feature-oriented ``pipeline_id`` strings (reframe-only,
+dead-air cuts, audio-quality chain). Only those identifiers are valid in APIs
+and manifests.
 """
 
 from __future__ import annotations
@@ -19,14 +15,23 @@ from typing import Mapping
 
 
 SCHEMA_VERSION = "1.0.0"
-SCHEMA_VERSION_PHASE2 = "2.0.0"
-SCHEMA_VERSION_PHASE3 = "3.0.0"
+SCHEMA_VERSION_JOB_MANIFEST_V2 = "2.0.0"
+SCHEMA_VERSION_JOB_MANIFEST_V3 = "3.0.0"
 
-PHASE_1_PIPELINE_ID = "phase1_smooth_reframe_16x9_to_9x16"
-PHASE_2_PIPELINE_ID = "phase2_smooth_reframe_dead_air_cut"
-PHASE_3_PIPELINE_ID = "phase3_audio_quality_cut"
+# Canonical pipeline identifiers (feature-oriented).
+PIPELINE_ID_REFRAME_16X9_TO_9X16 = "reframe_16x9_to_9x16"
+PIPELINE_ID_REFRAME_DEAD_AIR = "reframe_16x9_to_9x16_dead_air"
+PIPELINE_ID_REFRAME_AUDIO_QUALITY = "reframe_16x9_to_9x16_audio_quality"
 
-PHASE_1_STEP_IDS: tuple[str, ...] = (
+KNOWN_PIPELINE_IDS: frozenset[str] = frozenset(
+    {
+        PIPELINE_ID_REFRAME_16X9_TO_9X16,
+        PIPELINE_ID_REFRAME_DEAD_AIR,
+        PIPELINE_ID_REFRAME_AUDIO_QUALITY,
+    }
+)
+
+REFRAME_ONLY_STEP_IDS: tuple[str, ...] = (
     "validation",
     "media_metadata",
     "proxy_frame_sampling",
@@ -38,7 +43,7 @@ PHASE_1_STEP_IDS: tuple[str, ...] = (
     "ffmpeg_renderer",
 )
 
-PHASE_2_STEP_IDS: tuple[str, ...] = (
+REFRAME_DEAD_AIR_STEP_IDS: tuple[str, ...] = (
     "validation",
     "media_metadata",
     "audio_extraction",
@@ -53,7 +58,7 @@ PHASE_2_STEP_IDS: tuple[str, ...] = (
     "ffmpeg_renderer",
 )
 
-PHASE_3_STEP_IDS: tuple[str, ...] = (
+REFRAME_AUDIO_QUALITY_STEP_IDS: tuple[str, ...] = (
     "validation",
     "media_metadata",
     "audio_extraction",
@@ -70,16 +75,18 @@ PHASE_3_STEP_IDS: tuple[str, ...] = (
     "ffmpeg_renderer",
 )
 
-PIPELINE_STEP_IDS = PHASE_1_STEP_IDS
+PIPELINE_STEP_IDS = REFRAME_ONLY_STEP_IDS
 
 PIPELINE_STEPS_BY_ID: dict[str, tuple[str, ...]] = {
-    PHASE_1_PIPELINE_ID: PHASE_1_STEP_IDS,
-    PHASE_2_PIPELINE_ID: PHASE_2_STEP_IDS,
-    PHASE_3_PIPELINE_ID: PHASE_3_STEP_IDS,
+    PIPELINE_ID_REFRAME_16X9_TO_9X16: REFRAME_ONLY_STEP_IDS,
+    PIPELINE_ID_REFRAME_DEAD_AIR: REFRAME_DEAD_AIR_STEP_IDS,
+    PIPELINE_ID_REFRAME_AUDIO_QUALITY: REFRAME_AUDIO_QUALITY_STEP_IDS,
 }
 
 KNOWN_PIPELINE_STEP_IDS: tuple[str, ...] = tuple(
-    dict.fromkeys(PHASE_1_STEP_IDS + PHASE_2_STEP_IDS + PHASE_3_STEP_IDS)
+    dict.fromkeys(
+        REFRAME_ONLY_STEP_IDS + REFRAME_DEAD_AIR_STEP_IDS + REFRAME_AUDIO_QUALITY_STEP_IDS
+    )
 )
 
 ARTIFACT_PRODUCERS: dict[str, str] = {
@@ -149,17 +156,17 @@ def steps_for_pipeline(pipeline_id: str) -> tuple[str, ...]:
     try:
         return PIPELINE_STEPS_BY_ID[pipeline_id]
     except KeyError as exc:
-        allowed = ", ".join(sorted(PIPELINE_STEPS_BY_ID))
+        allowed = ", ".join(sorted(KNOWN_PIPELINE_IDS))
         raise KeyError(
             f"Unknown pipeline_id '{pipeline_id}'. Expected one of: {allowed}."
         ) from exc
 
 
 def schema_version_for_pipeline(pipeline_id: str) -> str:
-    if pipeline_id == PHASE_3_PIPELINE_ID:
-        return SCHEMA_VERSION_PHASE3
-    if pipeline_id == PHASE_2_PIPELINE_ID:
-        return SCHEMA_VERSION_PHASE2
+    if pipeline_id == PIPELINE_ID_REFRAME_AUDIO_QUALITY:
+        return SCHEMA_VERSION_JOB_MANIFEST_V3
+    if pipeline_id == PIPELINE_ID_REFRAME_DEAD_AIR:
+        return SCHEMA_VERSION_JOB_MANIFEST_V2
     return SCHEMA_VERSION
 
 

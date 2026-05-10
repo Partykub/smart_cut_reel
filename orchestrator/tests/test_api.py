@@ -158,19 +158,19 @@ class OrchestratorApiTests(unittest.TestCase):
         self.assertFalse(thread.is_alive())
         self.assertEqual(run_response["response"].status_code, 200)  # type: ignore[union-attr]
 
-    def test_create_job_with_phase2_pipeline_id(self) -> None:
+    def test_create_job_dead_air_preset(self) -> None:
         response = self.client.post(
             "/jobs",
             files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
             data={
                 "created_by": "debug_frontend",
-                "pipeline_id": "phase2_smooth_reframe_dead_air_cut",
+                "pipeline_id": "reframe_16x9_to_9x16_dead_air",
             },
         )
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["pipeline"]["pipeline_id"], "phase2_smooth_reframe_dead_air_cut")
+        self.assertEqual(payload["pipeline"]["pipeline_id"], "reframe_16x9_to_9x16_dead_air")
         self.assertEqual(len(payload["pipeline"]["steps"]), 12)
         self.assertEqual(payload["enabled_features"], {"remove_dead_air": True})
         self.assertEqual(len(payload["service_status"]["steps"]), 12)
@@ -186,18 +186,31 @@ class OrchestratorApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("Unknown pipeline_id", response.json()["detail"])
 
+    def test_create_job_rejects_legacy_phase_pipeline_id_alias(self) -> None:
+        response = self.client.post(
+            "/jobs",
+            files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
+            data={
+                "created_by": "debug_frontend",
+                "pipeline_id": "phase2_smooth_reframe_dead_air_cut",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Unknown pipeline_id", response.json()["detail"])
+
     def test_create_job_overrides_enabled_features_with_form_field(self) -> None:
         """The frontend can flip individual feature flags by sending an
         ``enabled_features`` JSON object alongside ``pipeline_id``; the
         orchestrator merges those flags onto the manifest template so users
-        can e.g. opt out of filler-word cutting on Phase 3 jobs.
+        can e.g. opt out of filler-word cutting on audio-quality preset jobs.
         """
         response = self.client.post(
             "/jobs",
             files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
             data={
                 "created_by": "debug_frontend",
-                "pipeline_id": "phase3_audio_quality_cut",
+                "pipeline_id": "reframe_16x9_to_9x16_audio_quality",
                 "enabled_features": json.dumps(
                     {
                         "remove_dead_air": True,
@@ -221,7 +234,7 @@ class OrchestratorApiTests(unittest.TestCase):
             files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
             data={
                 "created_by": "debug_frontend",
-                "pipeline_id": "phase2_smooth_reframe_dead_air_cut",
+                "pipeline_id": "reframe_16x9_to_9x16_dead_air",
                 "enabled_features": "not-json",
             },
         )
@@ -229,13 +242,13 @@ class OrchestratorApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("enabled_features", response.json()["detail"])
 
-    def test_run_job_with_phase2_pipeline_marks_all_twelve_steps_complete(self) -> None:
+    def test_run_job_with_dead_air_preset_marks_all_twelve_steps_complete(self) -> None:
         created = self.client.post(
             "/jobs",
             files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
             data={
                 "created_by": "debug_frontend",
-                "pipeline_id": "phase2_smooth_reframe_dead_air_cut",
+                "pipeline_id": "reframe_16x9_to_9x16_dead_air",
             },
         ).json()
 

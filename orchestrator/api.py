@@ -1,4 +1,4 @@
-"""FastAPI adapter for the Phase 1 orchestrator service."""
+"""FastAPI adapter for the Smart Cut Reel orchestrator."""
 
 import asyncio
 import json
@@ -31,7 +31,7 @@ def create_app(service: OrchestratorService | None = None):
     async def create_job(
         source: UploadFile = File(...),
         created_by: str = Form("debug_frontend"),
-        pipeline_id: str = Form("phase1_smooth_reframe_16x9_to_9x16"),
+        pipeline_id: str = Form("reframe_16x9_to_9x16"),
         enabled_features: str | None = Form(None),
     ) -> dict:
         feature_overrides = _parse_enabled_features(enabled_features)

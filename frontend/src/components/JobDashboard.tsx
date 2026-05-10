@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getJobStatus } from "@/lib/api";
-import { isTerminalStatus, type JobStatusResponse } from "@/lib/types";
+import {
+  isTerminalStatus,
+  PIPELINE_ID_REFRAME_AUDIO_QUALITY,
+  PIPELINE_ID_REFRAME_DEAD_AIR,
+  type JobStatusResponse,
+} from "@/lib/types";
 
 import { ArtifactList } from "./ArtifactList";
 import { CutPlanCard } from "./CutPlanCard";
@@ -98,10 +103,10 @@ export function JobDashboard({ jobId }: { jobId: string }) {
 
   const pipeline = data.pipeline;
   const enabledFeatures = data.enabled_features ?? {};
-  const isPhase2Pipeline =
-    pipeline?.pipeline_id === "phase2_smooth_reframe_dead_air_cut";
-  const isPhase3Pipeline =
-    pipeline?.pipeline_id === "phase3_audio_quality_cut";
+  const pid = pipeline?.pipeline_id;
+  const isDeadAirPipeline =
+    pid === PIPELINE_ID_REFRAME_DEAD_AIR || pid === PIPELINE_ID_REFRAME_AUDIO_QUALITY;
+  const isAudioQualityPipeline = pid === PIPELINE_ID_REFRAME_AUDIO_QUALITY;
   const hasCutPlan = Boolean(data.artifacts?.cut_plan);
   // Only show transcript card when filler-word cutting is actually enabled.
   // When disabled, transcription is skipped server-side and the artifact is
@@ -117,17 +122,17 @@ export function JobDashboard({ jobId }: { jobId: string }) {
         <div>
           <p className="text-xs uppercase tracking-widest text-zinc-500">Job</p>
           <h1 className="font-mono text-2xl text-zinc-100">{data.job_id}</h1>
-          {isPhase2Pipeline ? (
+          {isDeadAirPipeline ? (
             <p className="mt-1 text-xs text-violet-300">
-              Phase 2 pipeline · remove_dead_air ={" "}
+              ชุดคิว: reframe + dead air · remove_dead_air ={" "}
               <span className="font-mono">
                 {String(enabledFeatures.remove_dead_air ?? false)}
               </span>
             </p>
           ) : null}
-          {isPhase3Pipeline ? (
+          {isAudioQualityPipeline ? (
             <p className="mt-1 text-xs text-amber-300">
-              Phase 3 pipeline · enhance_audio ={" "}
+              ชุดคิว: reframe + dead air + เสียง/ถอดความ · enhance_audio ={" "}
               <span className="font-mono">
                 {String(enabledFeatures.enhance_audio ?? false)}
               </span>{" "}

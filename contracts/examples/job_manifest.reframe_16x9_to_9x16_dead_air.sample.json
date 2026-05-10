@@ -1,5 +1,5 @@
 {
-    "schema_version": "3.0.0",
+    "schema_version": "2.0.0",
     "job_id": "job_001",
     "created_at": "2026-05-08T10:00:00Z",
     "created_by": "orchestrator",
@@ -22,14 +22,12 @@
         "object_key": "jobs/job_001/outputs/final_9x16.mp4"
     },
     "pipeline": {
-        "pipeline_id": "phase3_audio_quality_cut",
+        "pipeline_id": "reframe_16x9_to_9x16_dead_air",
         "steps": [
             "validation",
             "media_metadata",
             "audio_extraction",
-            "audio_enhancement",
             "voice_activity_detection",
-            "transcription",
             "dead_air_cut_planning",
             "proxy_frame_sampling",
             "body_detection",
@@ -41,55 +39,39 @@
         ]
     },
     "enabled_features": {
-        "remove_dead_air": true,
-        "enhance_audio": true,
-        "remove_filler_words": true
+        "remove_dead_air": true
     },
     "service_config": {
         "audio_extraction": {
             "sample_rate": 16000,
             "channels": 1
         },
-        "audio_enhancement": {
-            "denoise_model": "std",
-            "target_lufs": -16.0,
-            "true_peak_db": -1.5,
-            "loudness_range": 11.0,
-            "highpass_frequency_hz": 80
-        },
         "voice_activity_detection": {
             "model": "silero_v5",
-            "audio_source": "enhanced_audio_or_extracted",
+            "audio_source": "extracted_audio",
             "speech_threshold": 0.5,
             "min_speech_duration_seconds": 0.25,
             "min_silence_duration_seconds": 0.2,
             "speech_pad_seconds": 0.05,
             "frame_duration_seconds": 0.03
         },
-        "transcription": {
-            "model": "medium",
-            "language": "auto",
-            "compute_type": "int8",
-            "filler_words_th": ["เอ่อ", "อืม", "อ่า", "อ่ะ", "เอ้อ"],
-            "filler_words_en": ["um", "uh", "uhh", "uhm", "ah", "er", "erm"],
-            "filler_min_silence_around_seconds": 0.05
-        },
         "dead_air_cut_planning": {
             "silence_threshold_seconds": 0.8,
             "keep_padding_before": 0.15,
             "keep_padding_after": 0.2,
-            "min_keep_segment_seconds": 0.5,
-            "filler_padding_before": 0.05,
-            "filler_padding_after": 0.05,
-            "merge_adjacent_cuts_within_seconds": 0.1
+            "min_keep_segment_seconds": 0.5
         },
         "proxy_frame_sampling": {
-            "sample_fps": 5,
-            "proxy_height": 540
+            "proxy_height": 540,
+            "sample_every_n_source_frames": 1
         },
         "body_detection": {
             "subject_selection_strategy": "nearest_previous_crop_center",
-            "min_confidence": 0.5
+            "min_confidence": 0.9,
+            "model_path": "yolov8m.pt",
+            "device_preference": "gpu_first",
+            "image_size": 640,
+            "person_class_id": 0
         },
         "track_interpolation": {
             "max_gap_fill_seconds": 1.0,

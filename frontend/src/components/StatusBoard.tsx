@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import {
-  PHASE_1_STEP_ORDER,
+  STEP_ORDER_REFRAME_ONLY,
   type PipelineSummary,
   type ServiceStatus,
   type StepName,
@@ -18,13 +18,13 @@ const STATUS_BADGE: Record<StepStatus, string> = {
   failed: "border-red-800 bg-red-950/60 text-red-200",
 };
 
-const PHASE_2_ONLY_STEPS = new Set<StepName>([
+const DEAD_AIR_CHAIN_STEPS = new Set<StepName>([
   "audio_extraction",
   "voice_activity_detection",
   "dead_air_cut_planning",
 ]);
 
-const PHASE_3_ONLY_STEPS = new Set<StepName>(["audio_enhancement", "transcription"]);
+const AUDIO_QUALITY_CHAIN_STEPS = new Set<StepName>(["audio_enhancement", "transcription"]);
 
 const DEFAULT_STEP_STATE: StepState = {
   status: "pending",
@@ -35,11 +35,11 @@ const DEFAULT_STEP_STATE: StepState = {
 const STEP_LABEL: Record<StepName, string> = {
   validation: "Validate input",
   media_metadata: "Inspect media",
-  audio_extraction: "Extract audio",
+  audio_extraction: "Extract audio (for VAD / cuts)",
   audio_enhancement: "Enhance audio",
-  voice_activity_detection: "Voice activity",
-  transcription: "Transcribe",
-  dead_air_cut_planning: "Plan cuts",
+  voice_activity_detection: "VAD — speech vs silence",
+  transcription: "Transcribe (filler words)",
+  dead_air_cut_planning: "Dead air — build keep/cut plan",
   proxy_frame_sampling: "Sample frames",
   body_detection: "Detect people",
   track_interpolation: "Stabilize tracks",
@@ -67,7 +67,7 @@ export function StatusBoard({
   isTriggeringRun: boolean;
 }) {
   const steps =
-    pipeline?.steps && pipeline.steps.length > 0 ? pipeline.steps : PHASE_1_STEP_ORDER;
+    pipeline?.steps && pipeline.steps.length > 0 ? pipeline.steps : STEP_ORDER_REFRAME_ONLY;
 
   const [now, setNow] = useState(() => Date.now());
 
@@ -254,8 +254,8 @@ export function StatusBoard({
         {steps.map((step, index) => {
           const state = status.steps[step] ?? DEFAULT_STEP_STATE;
           const isCurrent = status.current_step === step;
-          const isPhase2Step = PHASE_2_ONLY_STEPS.has(step);
-          const isPhase3Step = PHASE_3_ONLY_STEPS.has(step);
+          const isDeadAirChainStep = DEAD_AIR_CHAIN_STEPS.has(step);
+          const isAudioQualityChainStep = AUDIO_QUALITY_CHAIN_STEPS.has(step);
           return (
             <li
               key={step}
@@ -268,12 +268,12 @@ export function StatusBoard({
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-sm">{step}</span>
-                    {isPhase2Step ? (
+                    {isDeadAirChainStep ? (
                       <span className="rounded-full border border-violet-800 bg-violet-950/40 px-1.5 py-0 text-[10px] font-medium uppercase tracking-wider text-violet-200">
                         audio
                       </span>
                     ) : null}
-                    {isPhase3Step ? (
+                    {isAudioQualityChainStep ? (
                       <span className="rounded-full border border-amber-800 bg-amber-950/40 px-1.5 py-0 text-[10px] font-medium uppercase tracking-wider text-amber-200">
                         quality
                       </span>

@@ -1,19 +1,14 @@
 # smart_cut_reel
 
-Phase 1 converts one 16:9 source video into a 9:16 vertical output with subject-aware smooth reframing.
-Phase 2 adds dead air cutting on top of Phase 1 by inserting an audio-driven planning chain
-(audio extraction → voice activity detection → cut planning) before the vision pipeline and
-extending the renderer with a single-pass trim+crop+concat mode.
-Phase 3 raises audio quality to a "production podcast" tier by inserting an enhancement
-service (denoise + EBU R128 loudness normalization) before VAD/ASR, swapping the energy
-VAD for **Silero VAD v5**, adding a **faster-whisper** transcription service with word-level
-timestamps, and extending the cut planner with filler-word removal.
+The **smooth vertical reframe** preset converts one 16:9 source into a 9:16 output with subject-aware smooth reframing.
+The **dead-air** preset adds an audio chain (extract → VAD → cut planning) before vision and uses trim+crop+concat rendering.
+The **audio-quality** preset adds enhancement + Silero VAD + faster-whisper ASR + optional filler-word cuts on top of dead-air.
 
 ## Current Status
 
 - P1-A01 through P1-H03 / P1-B03 completed (Phase 1 baseline shipped).
-- Phase 2 (`pipeline_id = phase2_smooth_reframe_dead_air_cut`, 12 steps) shipped: shared contracts accept `schema_version 1.0.0` and `2.0.0`; artifacts `extracted_audio`, `vad_segments`, `cut_plan`; `services/audio_extraction/`, `services/voice_activity_detection/`, `services/dead_air_cut_planning/` live with FastAPI `/run` adapters; `render_plan_compiler` + `ffmpeg_renderer` understand `compiler_render_mode = smooth_crop_with_cuts` and slice audio per keep segment so dead-air removal stays A/V-synced.
-- Phase 3 (`pipeline_id = phase3_audio_quality_cut`, 14 steps, `schema_version 3.0.0`) shipped: new services `services/audio_enhancement/` (highpass + `afftdn` denoise + EBU R128 `loudnorm`) and `services/transcription/` (faster-whisper + filler-word detection); `voice_activity_detection` gained a Silero v5 ONNX backend (`model: silero_v4`) and an `audio_source` selector that prefers `enhanced_audio.wav`; `dead_air_cut_planning` extended to subtract filler-word intervals from `keep_segments` when `enabled_features.remove_filler_words` is on. Phase 1 / Phase 2 jobs remain backward-compatible.
+- **Dead-air preset** (`pipeline_id = reframe_16x9_to_9x16_dead_air`, 12 steps) shipped: contracts accept `schema_version 1.0.0` and `2.0.0`; artifacts `extracted_audio`, `vad_segments`, `cut_plan`; dead-air services plus `compiler_render_mode = smooth_crop_with_cuts` with per-segment audio.
+- **Audio-quality preset** (`pipeline_id = reframe_16x9_to_9x16_audio_quality`, 14 steps, `schema_version 3.0.0`) shipped: `services/audio_enhancement/`, `services/transcription/`, Silero VAD v5, filler-word cuts when `enabled_features.remove_filler_words` is on.
 
 ## Source Of Truth
 
@@ -124,19 +119,19 @@ Notes:
 - First-time `medium` downloads are significantly larger/slower than `small`.
 - Setting `HF_TOKEN` can improve HuggingFace Hub download reliability/speed.
 
-### Choosing Phase 1 vs Phase 2 vs Phase 3
+### Choosing a pipeline preset (`pipeline_id`)
 
 Pass `pipeline_id` to `POST /jobs` (form field). The orchestrator picks the matching manifest template:
 
 ```bash
-# Phase 1 (default) — smooth reframe only (9 steps)
+# Default — smooth vertical reframe only (9 steps)
 curl -F "source=@clip.mp4" http://127.0.0.1:8000/jobs
 
-# Phase 2 — smooth reframe + dead air cutting (12 steps)
-curl -F "source=@clip.mp4" -F "pipeline_id=phase2_smooth_reframe_dead_air_cut" http://127.0.0.1:8000/jobs
+# Dead air + reframe (12 steps)
+curl -F "source=@clip.mp4" -F "pipeline_id=reframe_16x9_to_9x16_dead_air" http://127.0.0.1:8000/jobs
 
-# Phase 3 — Phase 2 + audio enhancement + Silero VAD + transcription + filler-word cut (14 steps)
-curl -F "source=@clip.mp4" -F "pipeline_id=phase3_audio_quality_cut" http://127.0.0.1:8000/jobs
+# Audio quality chain + dead air + reframe (14 steps)
+curl -F "source=@clip.mp4" -F "pipeline_id=reframe_16x9_to_9x16_audio_quality" http://127.0.0.1:8000/jobs
 ```
 
 Background mode:
@@ -154,7 +149,7 @@ cd frontend && cp -n .env.local.example .env.local && npm install && npm run dev
 
 Open **http://localhost:3000**, upload a 16:9 clip, run the pipeline, then preview/download when `final_9x16` appears.
 
-To use segmented smooth rendering instead of a single static crop, set `compiler_render_mode` to `"smooth_crop"` under `service_config.render_plan_compiler` in [`contracts/examples/job_manifest.sample.json`](contracts/examples/job_manifest.sample.json) (orchestrator copies this template when creating jobs).
+To use segmented smooth rendering instead of a single static crop, set `compiler_render_mode` to `"smooth_crop"` under `service_config.render_plan_compiler` in [`contracts/examples/job_manifest.reframe_16x9_to_9x16.sample.json`](contracts/examples/job_manifest.reframe_16x9_to_9x16.sample.json) (orchestrator copies this template when creating jobs).
 
 ## Validation
 
@@ -191,10 +186,10 @@ Run the current focused test suite with:
 	orchestrator.tests.test_artifact_helpers \
 	orchestrator.tests.test_pipeline_runner \
 	orchestrator.tests.test_api \
-	tests.integration.test_phase2_fixtures \
-	tests.integration.test_phase2_render_plan_compiler_fixtures \
-	tests.integration.test_phase2_dead_air_e2e \
-	tests.integration.test_phase3_audio_quality_e2e
+	tests.integration.test_dead_air_fixtures \
+	tests.integration.test_dead_air_render_plan_compiler_fixtures \
+	tests.integration.test_dead_air_e2e \
+	tests.integration.test_audio_quality_e2e
 ```
 
 ## What The Team Should Do Next

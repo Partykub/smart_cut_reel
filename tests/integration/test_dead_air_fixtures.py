@@ -1,4 +1,4 @@
-"""Validate that the canned Phase 2 fixtures match the contract schemas
+"""Validate that the canned dead-air fixtures match the contract schemas
 and satisfy the invariants the downstream services rely on.
 
 Each fixture variant must:
@@ -23,7 +23,7 @@ import unittest
 from pathlib import Path
 
 
-FIXTURE_ROOT = Path(__file__).resolve().parents[2] / "fixtures" / "phase2"
+FIXTURE_ROOT = Path(__file__).resolve().parents[2] / "fixtures" / "dead_air"
 VARIANTS = ("heavy_cut", "light_cut", "no_cut")
 
 
@@ -31,7 +31,7 @@ def _load(variant: str, name: str) -> dict:
     return json.loads((FIXTURE_ROOT / variant / name).read_text(encoding="utf-8"))
 
 
-class Phase2FixtureShapeTests(unittest.TestCase):
+class DeadAirFixtureShapeTests(unittest.TestCase):
     def test_each_variant_provides_three_artifacts(self) -> None:
         for variant in VARIANTS:
             with self.subTest(variant=variant):
@@ -41,7 +41,7 @@ class Phase2FixtureShapeTests(unittest.TestCase):
                 self.assertTrue((base / "reframe_plan_smooth.json").is_file())
 
 
-class Phase2VadSegmentsTests(unittest.TestCase):
+class DeadAirVadSegmentsTests(unittest.TestCase):
     def test_segments_cover_full_duration_without_gaps(self) -> None:
         for variant in VARIANTS:
             with self.subTest(variant=variant):
@@ -94,7 +94,7 @@ class Phase2VadSegmentsTests(unittest.TestCase):
                 )
 
 
-class Phase2CutPlanTests(unittest.TestCase):
+class DeadAirCutPlanTests(unittest.TestCase):
     def test_keep_segments_stay_inside_source_and_are_sorted(self) -> None:
         for variant in VARIANTS:
             with self.subTest(variant=variant):
@@ -150,7 +150,7 @@ class Phase2CutPlanTests(unittest.TestCase):
         self.assertEqual(payload["metrics"]["cut_count"], 1)
 
 
-class Phase2ReframePlanTests(unittest.TestCase):
+class DeadAirReframePlanTests(unittest.TestCase):
     def test_keyframes_cover_source_timeline(self) -> None:
         for variant in VARIANTS:
             with self.subTest(variant=variant):

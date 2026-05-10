@@ -1,6 +1,6 @@
 {
     "schema_version": "2.0.0",
-    "job_id": "job_phase2_heavy_cut",
+    "job_id": "job_dead_air_heavy_cut",
     "feature_enabled": true,
     "source_duration_seconds": 60.0,
     "config_used": {

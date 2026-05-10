@@ -159,7 +159,7 @@ class FFmpegRendererService:
         raw_entry = artifact_manifest.get("artifacts", {}).get("body_tracks_raw", {})
         raw_key = raw_entry.get("object_key") if isinstance(raw_entry, dict) else None
         if not isinstance(raw_key, str) or not context.exists(raw_key):
-            raise ValueError("artifact_manifest is missing body_tracks_raw for ffmpeg_renderer")
+            return {"tracks": []}
         return context.read_json(raw_key)
 
     def _render_static_crop(

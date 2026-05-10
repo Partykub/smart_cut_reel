@@ -338,7 +338,7 @@ Done when:
 
 รายการนี้เป็น Markdown task list สำหรับติ๊กสถานะ — เปลี่ยน `[ ]` เป็น `[x]` เมื่อเสร็จ ลำดับ ID ต่อจาก Phase 1 ตาม lane เดิม + lane ใหม่ J/K/L
 
-- [x] P2-A01: Bump contracts สำหรับ Phase 2 — เพิ่ม `pipeline_id = "phase2_smooth_reframe_dead_air_cut"`, ขยาย `pipeline.steps` array, เพิ่ม `enabled_features.remove_dead_air` ใน `job_manifest.schema.json`, schema_version `2.0.0`
+- [x] P2-A01: Bump contracts สำหรับ Phase 2 — เพิ่ม preset dead-air `pipeline_id = "reframe_16x9_to_9x16_dead_air"`, ขยาย `pipeline.steps` array, เพิ่ม `enabled_features.remove_dead_air` ใน `job_manifest.schema.json`, schema_version `2.0.0`
   Owner: Orchestrator | Write Scope: `contracts/` เท่านั้น | Depends on: P1-A01 | Deliverable: schema + sample manifest ใหม่ใน `contracts/examples/`
 - [x] P2-A02: ขยาย `artifact_manifest.schema.json` — เพิ่ม artifact key `extracted_audio`, `vad_segments`, `cut_plan` พร้อม pattern + producer
   Owner: Orchestrator | Write Scope: `contracts/` เท่านั้น | Depends on: P2-A01 | Deliverable: schema ใหม่ + sample artifact manifest
@@ -428,12 +428,12 @@ Create Job
   -> Download final_9x16.mp4
 ```
 
-### Backward Compatibility กับ Phase 1
+### Preset IDs และความเข้ากันได้กับ reframe-only
 
-- Phase 1 jobs (`pipeline_id = "phase1_smooth_reframe_16x9_to_9x16"`) ยังเดินได้เหมือนเดิม
-- Phase 2 jobs (`pipeline_id = "phase2_smooth_reframe_dead_air_cut"`) เดิน 12 step
-- Orchestrator เลือก runner ตาม `pipeline_id` ของ job manifest
-- ถ้า Phase 2 job set `enabled_features.remove_dead_air = false` → audio chain ยัง run แต่ cut planning emit identity plan, renderer fallback ไป mode `smooth_crop` เดิม (output เท่ากับ Phase 1)
+- Jobs แบบ reframe-only ใช้ `pipeline_id = "reframe_16x9_to_9x16"` (9 steps)
+- Jobs dead-air ใช้ `pipeline_id = "reframe_16x9_to_9x16_dead_air"` (12 steps)
+- Orchestrator เลือกลำดับ step ตาม `pipeline_id` ใน job manifest
+- ถ้า dead-air job set `enabled_features.remove_dead_air = false` → audio chain ยัง run แต่ cut planning emit identity plan, renderer fallback ไป mode `smooth_crop` เดิม (ผลลัพธ์เทียบเท่า preset reframe-only)
 
 ## 7. Phase 2 Feature ที่ยังไม่ทำ (กันไว้ Phase 3)
 

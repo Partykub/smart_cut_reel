@@ -1,4 +1,4 @@
-"""End-to-end smoke test for the Phase 2 dead-air cutting pipeline.
+"""End-to-end smoke test for the dead-air cutting pipeline (`reframe_16x9_to_9x16_dead_air`).
 
 Generates a synthetic 9-second clip with audio that alternates loud/silent/loud
 in 3-second blocks, then drives the new audio chain end-to-end:
@@ -6,7 +6,7 @@ in 3-second blocks, then drives the new audio chain end-to-end:
 * ``audio_extraction`` extracts mono PCM
 * ``voice_activity_detection`` segments speech vs silence
 * ``dead_air_cut_planning`` collapses silences into a cut plan
-* ``render_plan_compiler`` projects the smooth crop onto each keep segment
+* ``render_plan_compiler`` projects a canned smooth crop onto each keep segment (integration stand-in for upstream vision + easing)
 * ``ffmpeg_renderer`` renders the final 9:16 MP4 with trims + concat + mux
 
 The headline acceptance criterion (P2-I06) is that the rendered MP4's duration
@@ -92,12 +92,12 @@ def _generate_synthetic_clip(out_path: Path) -> None:
 
 
 @unittest.skipUnless(_FFMPEG and _FFPROBE, "ffmpeg/ffprobe not installed")
-class Phase2DeadAirEndToEndTests(unittest.TestCase):
+class DeadAirEndToEndTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.store = FilesystemObjectStore(self.root)
-        self.job_id = "job_phase2_e2e"
+        self.job_id = "job_dead_air_e2e"
         self.prefix = f"jobs/{self.job_id}"
 
         src_path = self.root / "source.mp4"
@@ -146,6 +146,7 @@ class Phase2DeadAirEndToEndTests(unittest.TestCase):
 
         self.job_manifest_key = f"{self.prefix}/manifests/job_manifest.json"
         self.output_key = f"{self.prefix}/outputs/final_9x16.mp4"
+        self.overlay_key = f"{self.prefix}/outputs/source_overlay.mp4"
         self.store.upload_json(
             self.job_manifest_key,
             {
@@ -368,7 +369,10 @@ class Phase2DeadAirEndToEndTests(unittest.TestCase):
                     step_id="ffmpeg_renderer",
                     minio=RunMinIO(bucket="smart-cut", prefix=f"{self.prefix}/"),
                     inputs={"artifact_manifest": self.artifact_manifest_key},
-                    expected_outputs={"final_9x16": self.output_key},
+                    expected_outputs={
+                        "final_9x16": self.output_key,
+                        "source_overlay": self.overlay_key,
+                    },
                     config={"video_codec": "libx264", "audio_codec": "aac"},
                 )
             )

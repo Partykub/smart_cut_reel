@@ -1,8 +1,9 @@
-# Phase 2 fixtures — dead-air cutting
+# Dead-air pipeline fixtures
 
 Three canned scenarios, each containing the artifacts the dead-air pipeline
-produces between `voice_activity_detection` and `render_plan_compiler`. All
-files validate against the Phase 2 contract schemas under `contracts/`.
+(production ID `reframe_16x9_to_9x16_dead_air`) produces between
+`voice_activity_detection` and `render_plan_compiler`. All files validate
+against the job / artifact contract schemas under `contracts/`.
 
 ## Variants
 
@@ -19,6 +20,6 @@ Each folder ships:
 - `reframe_plan_smooth.json` — keyframes 0..source_duration that the
   `render_plan_compiler` projects onto each keep segment
 
-The fixtures are consumed by the integration test in
-`tests/integration/test_phase2_pipeline_integration.py` and by future smoke
-tests for the renderer.
+The fixtures are consumed by `tests/integration/test_dead_air_fixtures.py`,
+`tests/integration/test_dead_air_render_plan_compiler_fixtures.py`, and the
+dead-air end-to-end smoke test.

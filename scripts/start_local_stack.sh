@@ -2,12 +2,11 @@
 # Start all microservices + Orchestrator on localhost so the HTTP pipeline
 # produces a real final_9x16.mp4 under SMART_CUT_OBJECT_STORE_ROOT (default: repo/.orchestrator-data).
 #
-# Phase 1 services (8010–8018): validation, media_metadata, proxy_frame_sampling,
+# Vision/reframe stack (8010–8018): validation, media_metadata, proxy_frame_sampling,
 #   body_detection, track_interpolation, reframe_planning, easing_smoothing,
 #   render_plan_compiler, ffmpeg_renderer.
-# Phase 2 services (8019–8021): audio_extraction, voice_activity_detection,
-#   dead_air_cut_planning.
-# Phase 3 services (8022–8023): audio_enhancement, transcription.
+# Dead-air chain (8019–8021): audio_extraction, voice_activity_detection, dead_air_cut_planning.
+# Audio-quality chain (8022–8023): audio_enhancement, transcription.
 #
 # Prerequisites: Python venv with requirements.txt, ffmpeg + ffprobe on PATH, Node (for frontend).
 #
@@ -178,7 +177,7 @@ if [[ "$DETACH" == false ]]; then
 fi
 
 echo "SMART_CUT_OBJECT_STORE_ROOT=${SMART_CUT_OBJECT_STORE_ROOT}"
-echo "Orchestrator will call services on ${BASE} ports ${P_VALIDATION}-${P_FFMPEG} (Phase 1), ${P_AUDIO}-${P_CUT_PLAN} (Phase 2), ${P_AUDIO_ENHANCE}-${P_TRANSCRIPTION} (Phase 3)"
+echo "Orchestrator will call services on ${BASE} ports ${P_VALIDATION}-${P_FFMPEG} (vision/reframe), ${P_AUDIO}-${P_CUT_PLAN} (dead-air), ${P_AUDIO_ENHANCE}-${P_TRANSCRIPTION} (audio-quality)"
 
 start_uvicorn "validation" "${P_VALIDATION}" "services.validation.api:create_app"
 start_uvicorn "media_metadata" "${P_META}" "services.media_metadata.api:create_app"

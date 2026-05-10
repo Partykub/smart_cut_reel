@@ -9,7 +9,7 @@ from typing import Protocol
 
 from .artifact_helper import ArtifactHelper
 from .contracts import ARTIFACT_PRODUCERS
-from .contracts import PHASE_1_STEP_IDS
+from .contracts import REFRAME_ONLY_STEP_IDS
 from .manifest_manager import ManifestManager
 from .manifest_manager import utc_now
 from .path_resolver import artifact_path
@@ -305,7 +305,7 @@ class MockPipelineRunner:
     ) -> dict[str, Any]:
         del artifact_helper
 
-        steps = manifest_manager.pipeline_steps(job_id) or PHASE_1_STEP_IDS
+        steps = manifest_manager.pipeline_steps(job_id) or REFRAME_ONLY_STEP_IDS
 
         for index, step_id in enumerate(steps):
             started_at = utc_now()

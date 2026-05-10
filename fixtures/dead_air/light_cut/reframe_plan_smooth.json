@@ -1,5 +1,5 @@
 {
-    "job_id": "job_phase2_light_cut",
+    "job_id": "job_dead_air_light_cut",
     "crop_width": 608,
     "crop_height": 1080,
     "source_resolution": {"width": 1920, "height": 1080},

@@ -38,7 +38,7 @@ Status:
 
 These step IDs are canonical and must be used consistently across Orchestrator, services, fixtures, and UI.
 
-### Phase 1 (`pipeline_id = phase1_smooth_reframe_16x9_to_9x16`)
+### Smooth vertical reframe only (`pipeline_id = reframe_16x9_to_9x16`)
 
 1. `validation`
 2. `media_metadata`
@@ -50,7 +50,7 @@ These step IDs are canonical and must be used consistently across Orchestrator, 
 8. `render_plan_compiler`
 9. `ffmpeg_renderer`
 
-### Phase 2 (`pipeline_id = phase2_smooth_reframe_dead_air_cut`)
+### Reframe + dead-air cuts (`pipeline_id = reframe_16x9_to_9x16_dead_air`)
 
 1. `validation`
 2. `media_metadata`
@@ -64,6 +64,25 @@ These step IDs are canonical and must be used consistently across Orchestrator, 
 10. `easing_smoothing`
 11. `render_plan_compiler`
 12. `ffmpeg_renderer`
+
+### Reframe + dead-air + audio quality (`pipeline_id = reframe_16x9_to_9x16_audio_quality`)
+
+1. `validation`
+2. `media_metadata`
+3. `audio_extraction`
+4. `audio_enhancement`
+5. `voice_activity_detection`
+6. `transcription`
+7. `dead_air_cut_planning`
+8. `proxy_frame_sampling`
+9. `body_detection`
+10. `track_interpolation`
+11. `reframe_planning`
+12. `easing_smoothing`
+13. `render_plan_compiler`
+14. `ffmpeg_renderer`
+
+Manifest `schema_version` is `3.0.0`.
 
 ## Artifact Registry Keys
 
@@ -90,10 +109,10 @@ These step IDs are canonical and must be used consistently across Orchestrator, 
 4. If a step fails hard, Orchestrator writes a plain-string error to `service_status.json`, marks the failing step `failed`, sets the overall job status to `failed`, and stops the pipeline.
 5. Soft fallbacks such as missing body detections or feature-disabled cut plans should still produce the expected artifact and emit a structured warning instead of failing the job.
 
-## Phase 2 Feature Toggle
+## Dead-air feature toggle
 
-- Phase 2 jobs may include `enabled_features.remove_dead_air`. When `false`, `dead_air_cut_planning` still runs and emits an identity cut plan (one keep segment covering the full duration), so the renderer can fall back to Phase 1 behavior without conditional pipeline branches.
-- Phase 1 jobs do not include `enabled_features` at all; the schema treats it as optional.
+- Dead-air preset jobs may include `enabled_features.remove_dead_air`. When `false`, `dead_air_cut_planning` still runs and emits an identity cut plan (one keep segment covering the full duration), so the renderer can fall back to reframe-only behavior without conditional pipeline branches.
+- Reframe-only preset jobs do not include `enabled_features` at all; the schema treats it as optional.
 
 ## Ownership Boundaries
 
@@ -104,8 +123,9 @@ These step IDs are canonical and must be used consistently across Orchestrator, 
 
 ## Example Fixtures
 
-- `examples/job_manifest.sample.json`: representative Phase 1 job request (`schema_version 1.0.0`).
-- `examples/job_manifest.phase2.sample.json`: representative Phase 2 job request with `remove_dead_air = true` and `compiler_render_mode = smooth_crop_with_cuts`.
+- `examples/job_manifest.reframe_16x9_to_9x16.sample.json`: representative reframe-only job (`schema_version 1.0.0`).
+- `examples/job_manifest.reframe_16x9_to_9x16_dead_air.sample.json`: dead-air preset with `remove_dead_air = true` and `compiler_render_mode = smooth_crop_with_cuts`.
+- `examples/job_manifest.reframe_16x9_to_9x16_audio_quality.sample.json`: audio-quality preset (`schema_version 3.0.0`).
 - `examples/artifact_manifest.created.sample.json`: initial empty registry.
 - `examples/artifact_manifest.running.sample.json`: partial registry after early media steps.
 - `examples/artifact_manifest.completed.sample.json`: full Phase 1 registry including the final output.
@@ -116,6 +136,6 @@ These step IDs are canonical and must be used consistently across Orchestrator, 
 ## Exclusions
 
 - No multi-camera roles or speaker diarization fields.
-- No Phase 3 timeline contracts (split-screen, reaction shot, audio polish, professional export).
+- No extra timeline contracts beyond these presets (split-screen, reaction shot, professional export).
 - No render-command schema beyond the render plan artifact reference.
 - No database schema, auth schema, or frontend view-model schema.

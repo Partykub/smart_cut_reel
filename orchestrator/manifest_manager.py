@@ -1,4 +1,4 @@
-"""Schema-aware manifest helpers for orchestrator state (Phase 1 + Phase 2)."""
+"""Schema-aware manifest helpers for orchestrator state."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from typing import Any
 from .contracts import ARTIFACT_CONTENT_TYPES
 from .contracts import ARTIFACT_PRODUCERS
 from .contracts import KNOWN_PIPELINE_STEP_IDS
-from .contracts import PHASE_1_PIPELINE_ID
-from .contracts import PHASE_1_STEP_IDS
+from .contracts import PIPELINE_ID_REFRAME_16X9_TO_9X16
+from .contracts import REFRAME_ONLY_STEP_IDS
 from .contracts import PIPELINE_STEPS_BY_ID
 from .contracts import schema_version_for_pipeline
 from .contracts import validate_document
@@ -55,13 +55,15 @@ class ManifestManager:
         manifest = self.read_job_manifest(job_id)
         steps = manifest.get("pipeline", {}).get("steps")
         if not isinstance(steps, list) or not steps:
-            return PHASE_1_STEP_IDS
+            return REFRAME_ONLY_STEP_IDS
         return tuple(str(step) for step in steps)
 
     def create_initial_job_state(self, job_manifest: dict[str, Any]) -> None:
         job_id = validate_job_id(job_manifest["job_id"])
         created_at = job_manifest.get("created_at", utc_now())
-        pipeline_id = job_manifest.get("pipeline", {}).get("pipeline_id", PHASE_1_PIPELINE_ID)
+        pipeline_id = job_manifest.get("pipeline", {}).get(
+            "pipeline_id", PIPELINE_ID_REFRAME_16X9_TO_9X16
+        )
         if pipeline_id in PIPELINE_STEPS_BY_ID:
             steps = PIPELINE_STEPS_BY_ID[pipeline_id]
         else:

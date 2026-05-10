@@ -1,4 +1,4 @@
-"""Canonical MinIO path resolution for orchestrator flows (Phase 1 + Phase 2 + Phase 3)."""
+"""Canonical MinIO path resolution for orchestrator flows (all pipeline presets)."""
 
 from __future__ import annotations
 

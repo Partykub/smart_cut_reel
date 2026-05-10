@@ -18,7 +18,9 @@ class ArtifactHelperTests(unittest.TestCase):
         self.manifest_manager = ManifestManager(self.store)
         self.helper = ArtifactHelper(self.store, self.manifest_manager)
         self.job_manifest = json.loads(
-            Path("contracts/examples/job_manifest.sample.json").read_text(encoding="utf-8")
+            Path("contracts/examples/job_manifest.reframe_16x9_to_9x16.sample.json").read_text(
+                encoding="utf-8"
+            )
         )
 
     def tearDown(self) -> None:
@@ -117,28 +119,32 @@ class ArtifactHelperTests(unittest.TestCase):
             all(object_key.startswith("jobs/job_001/") for object_key in self.helper.list_job_objects("job_001"))
         )
 
-    def test_phase2_initial_job_state_creates_twelve_steps(self) -> None:
-        phase2_manifest = json.loads(
-            Path("contracts/examples/job_manifest.phase2.sample.json").read_text(encoding="utf-8")
+    def test_dead_air_preset_initial_job_state_creates_twelve_steps(self) -> None:
+        dead_air_manifest = json.loads(
+            Path(
+                "contracts/examples/job_manifest.reframe_16x9_to_9x16_dead_air.sample.json"
+            ).read_text(encoding="utf-8")
         )
-        self.manifest_manager.create_initial_job_state(phase2_manifest)
+        self.manifest_manager.create_initial_job_state(dead_air_manifest)
 
-        service_status = self.manifest_manager.read_service_status(phase2_manifest["job_id"])
+        service_status = self.manifest_manager.read_service_status(dead_air_manifest["job_id"])
         self.assertEqual(service_status["schema_version"], "2.0.0")
         self.assertEqual(len(service_status["steps"]), 12)
         self.assertIn("audio_extraction", service_status["steps"])
         self.assertIn("voice_activity_detection", service_status["steps"])
         self.assertIn("dead_air_cut_planning", service_status["steps"])
 
-        artifact_manifest = self.manifest_manager.read_artifact_manifest(phase2_manifest["job_id"])
+        artifact_manifest = self.manifest_manager.read_artifact_manifest(dead_air_manifest["job_id"])
         self.assertEqual(artifact_manifest["schema_version"], "2.0.0")
 
-    def test_phase2_register_audio_artifacts(self) -> None:
-        phase2_manifest = json.loads(
-            Path("contracts/examples/job_manifest.phase2.sample.json").read_text(encoding="utf-8")
+    def test_dead_air_preset_register_audio_artifacts(self) -> None:
+        dead_air_manifest = json.loads(
+            Path(
+                "contracts/examples/job_manifest.reframe_16x9_to_9x16_dead_air.sample.json"
+            ).read_text(encoding="utf-8")
         )
-        self.manifest_manager.create_initial_job_state(phase2_manifest)
-        job_id = phase2_manifest["job_id"]
+        self.manifest_manager.create_initial_job_state(dead_air_manifest)
+        job_id = dead_air_manifest["job_id"]
 
         self.store.upload_bytes(artifact_path(job_id, "extracted_audio"), b"WAVE-bytes", content_type="audio/wav")
         entry = self.manifest_manager.register_artifact(job_id, "extracted_audio")

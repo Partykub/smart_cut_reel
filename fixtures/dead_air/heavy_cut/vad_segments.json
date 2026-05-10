@@ -1,8 +1,8 @@
 {
     "schema_version": "2.0.0",
-    "job_id": "job_phase2_heavy_cut",
+    "job_id": "job_dead_air_heavy_cut",
     "model": "energy",
-    "audio_object_key": "fixtures/phase2/heavy_cut/extracted_audio.wav",
+    "audio_object_key": "fixtures/dead_air/heavy_cut/extracted_audio.wav",
     "sample_rate": 16000,
     "channels": 1,
     "duration_seconds": 60.0,

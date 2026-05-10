@@ -1,10 +1,12 @@
 """Compile ``render_plan.json`` from metadata, smoothed reframe plan, and (optionally) cut plan.
 
 Phase 1 emits a single keep segment covering the whole source so the renderer
-falls back to its existing crop+concat behavior. Phase 2 emits multiple keep
-segments derived from ``cut_plan.json``, with the smoothed crop keyframes
-projected onto each segment's source-time window so the renderer can perform
-trim+crop+concat in one ffmpeg invocation.
+falls back to its existing crop+concat behavior. Jobs with dead-air cuts use
+``smooth_crop_with_cuts`` to project easing output onto each keep segment.
+
+``full_frame_with_cuts`` is an optional compiler mode that skips a stored
+``reframe_plan_smooth`` file and synthesizes a full-frame crop from metadata
+(useful for experiments or audio-only renders).
 """
 
 from __future__ import annotations
@@ -17,7 +19,9 @@ from services.common.runtime import ServiceContext
 
 RENDER_PLAN_SCHEMA_VERSION = "1.0.0"
 
-_VALID_RENDER_MODES = frozenset({"static_crop", "smooth_crop", "smooth_crop_with_cuts"})
+_VALID_COMPILER_RENDER_MODES = frozenset(
+    {"static_crop", "smooth_crop", "smooth_crop_with_cuts", "full_frame_with_cuts"}
+)
 
 
 class RenderPlanCompilerService:
@@ -29,15 +33,26 @@ class RenderPlanCompilerService:
         artifacts = artifact_manifest.get("artifacts", {})
 
         metadata_key = self._artifact_key(artifacts, "metadata")
-        smooth_key = self._artifact_key(artifacts, "reframe_plan_smooth")
 
         if not isinstance(metadata_key, str) or not context.exists(metadata_key):
             raise ValueError("artifact_manifest is missing metadata for render_plan_compiler")
-        if not isinstance(smooth_key, str) or not context.exists(smooth_key):
-            raise ValueError("artifact_manifest is missing reframe_plan_smooth for render_plan_compiler")
 
         metadata = context.read_json(metadata_key)
-        smooth_plan = context.read_json(smooth_key)
+
+        config = self._config(context)
+        compiler_mode = config["compiler_render_mode"]
+        if compiler_mode not in _VALID_COMPILER_RENDER_MODES:
+            raise ValueError(f"Invalid compiler_render_mode '{compiler_mode}'")
+
+        if compiler_mode == "full_frame_with_cuts":
+            duration_probe = float(metadata.get("duration") or 0.0)
+            smooth_plan = self._synthetic_full_frame_smooth(metadata, duration_probe, job_manifest)
+            smooth_key = metadata_key
+        else:
+            smooth_key = self._artifact_key(artifacts, "reframe_plan_smooth")
+            if not isinstance(smooth_key, str) or not context.exists(smooth_key):
+                raise ValueError("artifact_manifest is missing reframe_plan_smooth for render_plan_compiler")
+            smooth_plan = context.read_json(smooth_key)
 
         source_key = job_manifest.get("input", {}).get("source_video", {}).get("object_key")
         output_key_manifest = job_manifest.get("target_output", {}).get("object_key")
@@ -46,12 +61,13 @@ class RenderPlanCompilerService:
         if not isinstance(output_key_manifest, str):
             raise ValueError("job_manifest is missing target_output.object_key")
 
-        config = self._config(context)
         crop_representation = config["crop_representation"]
         audio_policy = config["audio_policy"]
-        render_mode = config["compiler_render_mode"]
-        if render_mode not in _VALID_RENDER_MODES:
-            raise ValueError(f"Invalid compiler_render_mode '{render_mode}'")
+        output_render_mode = (
+            "smooth_crop_with_cuts"
+            if compiler_mode in {"smooth_crop_with_cuts", "full_frame_with_cuts"}
+            else compiler_mode
+        )
 
         keyframes = smooth_plan.get("keyframes", [])
         if not isinstance(keyframes, list) or not keyframes:
@@ -80,7 +96,7 @@ class RenderPlanCompilerService:
         keep_segments = self._resolve_keep_segments(
             artifacts=artifacts,
             context=context,
-            render_mode=render_mode,
+            compiler_mode=compiler_mode,
             duration=duration,
         )
 
@@ -125,7 +141,7 @@ class RenderPlanCompilerService:
                 "keyframes": sorted_keyframes,
             },
             "segments": segments,
-            "render_mode": render_mode,
+            "render_mode": output_render_mode,
         }
 
         out_key = context.expected_output_key("render_plan")
@@ -137,16 +153,16 @@ class RenderPlanCompilerService:
         *,
         artifacts: dict[str, Any],
         context: ServiceContext,
-        render_mode: str,
+        compiler_mode: str,
         duration: float,
     ) -> list[dict[str, float]]:
-        if render_mode != "smooth_crop_with_cuts":
+        if compiler_mode not in {"smooth_crop_with_cuts", "full_frame_with_cuts"}:
             return [{"source_start": 0.0, "source_end": duration}]
 
         cut_plan_key = self._artifact_key(artifacts, "cut_plan")
         if not isinstance(cut_plan_key, str) or not context.exists(cut_plan_key):
             raise ValueError(
-                "smooth_crop_with_cuts requires the cut_plan artifact to be registered before render_plan_compiler"
+                "cut-based compiler modes require the cut_plan artifact to be registered before render_plan_compiler"
             )
         cut_plan = context.read_json(cut_plan_key)
         keep_raw = cut_plan.get("keep_segments") or []
@@ -192,7 +208,40 @@ class RenderPlanCompilerService:
         audio = defaults["audio_policy"]
         if audio not in {"copy_if_possible_else_aac", "aac_transcode"}:
             raise ValueError(f"Invalid audio_policy '{audio}'")
+        compiler_mode = defaults["compiler_render_mode"]
+        if compiler_mode not in _VALID_COMPILER_RENDER_MODES:
+            raise ValueError(f"Invalid compiler_render_mode '{compiler_mode}'")
         return defaults
+
+    def _synthetic_full_frame_smooth(
+        self,
+        metadata: dict[str, Any],
+        duration: float,
+        job_manifest: dict[str, Any],
+    ) -> dict[str, Any]:
+        source_width = int(metadata.get("width") or 0)
+        source_height = int(metadata.get("height") or 0)
+        if source_width <= 0 or source_height <= 0:
+            raise ValueError("metadata must include valid source dimensions for full_frame_with_cuts")
+
+        crop_w = source_width - (source_width % 2)
+        crop_h = source_height - (source_height % 2)
+        target_resolution = job_manifest.get("target_output", {}).get(
+            "resolution", {"width": 1080, "height": 1920}
+        )
+        tw = int(target_resolution.get("width") or 1080)
+        th = int(target_resolution.get("height") or 1920)
+
+        return {
+            "crop_width": crop_w,
+            "crop_height": crop_h,
+            "source_resolution": {"width": source_width, "height": source_height},
+            "target_resolution": {"width": tw, "height": th},
+            "keyframes": [
+                {"t": 0.0, "x": 0.0, "y": 0.0},
+                {"t": round(float(duration), 6), "x": 0.0, "y": 0.0},
+            ],
+        }
 
 
 def _slice_keyframes(
