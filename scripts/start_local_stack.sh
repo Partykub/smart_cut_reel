@@ -18,12 +18,19 @@
 #
 # Then in another terminal:
 #   cd frontend && npm run dev
-# Open http://localhost:3000 — upload 16:9 video, choose pipeline, Run, preview/download when done.
+# Open http://localhost:${FRONTEND_PORT:-3000} — upload 16:9 video, choose pipeline, Run, preview/download when done.
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
+
+if [[ -f "${REPO_ROOT}/.env.local" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "${REPO_ROOT}/.env.local"
+  set +a
+fi
 
 DETACH=false
 PREFETCH_TRANSCRIPTION_MODEL=false
@@ -69,26 +76,26 @@ export ORCHESTRATOR_MINIO_BUCKET="${ORCHESTRATOR_MINIO_BUCKET:-smart-cut}"
 BASE="${LOCAL_STACK_HOST:-127.0.0.1}"
 
 # Phase 1 vision pipeline
-P_VALIDATION=8010
-P_META=8011
-P_PROXY=8012
-P_BODY=8013
-P_TRACK=8014
-P_REFRAME=8015
-P_EASING=8016
-P_COMPILER=8017
-P_FFMPEG=8018
+P_VALIDATION="${VALIDATION_PORT:-8010}"
+P_META="${MEDIA_METADATA_PORT:-8011}"
+P_PROXY="${PROXY_FRAME_SAMPLING_PORT:-8012}"
+P_BODY="${BODY_DETECTION_PORT:-8013}"
+P_TRACK="${TRACK_INTERPOLATION_PORT:-8014}"
+P_REFRAME="${REFRAME_PLANNING_PORT:-8015}"
+P_EASING="${EASING_SMOOTHING_PORT:-8016}"
+P_COMPILER="${RENDER_PLAN_COMPILER_PORT:-8017}"
+P_FFMPEG="${FFMPEG_RENDERER_PORT:-8018}"
 
 # Phase 2 audio pipeline
-P_AUDIO=8019
-P_VAD=8020
-P_CUT_PLAN=8021
+P_AUDIO="${AUDIO_EXTRACTION_PORT:-8019}"
+P_VAD="${VOICE_ACTIVITY_DETECTION_PORT:-8020}"
+P_CUT_PLAN="${DEAD_AIR_CUT_PLANNING_PORT:-8021}"
 
 # Phase 3 audio quality chain
-P_AUDIO_ENHANCE=8022
-P_TRANSCRIPTION=8023
+P_AUDIO_ENHANCE="${AUDIO_ENHANCEMENT_PORT:-8022}"
+P_TRANSCRIPTION="${TRANSCRIPTION_PORT:-8023}"
 
-P_ORCH=8000
+P_ORCH="${ORCHESTRATOR_PORT:-8000}"
 
 ORCHESTRATOR_SERVICE_ENDPOINTS_JSON='{'
 ORCHESTRATOR_SERVICE_ENDPOINTS_JSON+='"validation":"http://'"${BASE}:${P_VALIDATION}"'",'
@@ -203,7 +210,7 @@ if [[ "$DETACH" == true ]]; then
   echo "Started orchestrator pid=$! port=${P_ORCH} log=${RUN_DIR}/logs/orchestrator.log"
   echo ""
   echo "Detach mode: stop with  ./scripts/stop_local_stack.sh"
-  echo "Frontend:     cd frontend && npm run dev   → http://localhost:3000"
+  echo "Frontend:     cd frontend && npm run dev   → http://localhost:${FRONTEND_PORT:-3000}"
   exit 0
 fi
 

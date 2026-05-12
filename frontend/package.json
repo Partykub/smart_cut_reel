@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 3000",
+    "dev": "sh -ac 'if [ -f ./.env.local ]; then . ./.env.local; fi; next dev --port ${FRONTEND_PORT:-3000}'",
     "build": "next build",
-    "start": "next start --port 3000",
+    "start": "sh -ac 'if [ -f ./.env.local ]; then . ./.env.local; fi; next start --port ${FRONTEND_PORT:-3000}'",
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest"

@@ -9,5 +9,7 @@ venv/
 
 .orchestrator-data/
 .run/
+.env.local
+.env.*.local
 yolov8m.pt
 videoplayback-300s.mp4
