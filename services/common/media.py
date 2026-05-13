@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
 from typing import Any
+from typing import Iterator
 from typing import Mapping
 
 
@@ -27,7 +30,11 @@ def run_ffprobe(file_path: Path) -> dict[str, Any]:
         text=True,
     )
     if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip() or "ffprobe failed"
+        detail = (
+            completed.stderr.strip()
+            or completed.stdout.strip()
+            or "ffprobe failed"
+        )
         raise ValueError(detail)
 
     try:
@@ -36,30 +43,47 @@ def run_ffprobe(file_path: Path) -> dict[str, Any]:
         raise ValueError("ffprobe returned invalid JSON") from exc
 
 
+@contextmanager
+def temporary_media_path(
+    *,
+    suffix: str,
+    data: bytes | None = None,
+) -> Iterator[Path]:
+    file_descriptor, file_name = tempfile.mkstemp(suffix=suffix)
+    os.close(file_descriptor)
+    media_path = Path(file_name)
+    try:
+        if data is not None:
+            media_path.write_bytes(data)
+        yield media_path
+    finally:
+        media_path.unlink(missing_ok=True)
+
+
 def probe_video_bytes(data: bytes, suffix: str = ".mp4") -> dict[str, Any]:
-    with tempfile.NamedTemporaryFile(suffix=suffix) as handle:
-        handle.write(data)
-        handle.flush()
-        return run_ffprobe(Path(handle.name))
+    with temporary_media_path(suffix=suffix, data=data) as media_path:
+        return run_ffprobe(media_path)
 
 
-def build_proxy_video_bytes(data: bytes, *, proxy_height: int, suffix: str = ".mp4") -> bytes:
+def build_proxy_video_bytes(
+    data: bytes,
+    *,
+    proxy_height: int,
+    suffix: str = ".mp4",
+) -> bytes:
     if proxy_height <= 0:
         raise ValueError("proxy_height must be greater than zero")
 
-    with (
-        tempfile.NamedTemporaryFile(suffix=suffix) as input_handle,
-        tempfile.NamedTemporaryFile(suffix=".mp4") as output_handle,
-    ):
-        input_handle.write(data)
-        input_handle.flush()
-
+    with temporary_media_path(
+        suffix=suffix,
+        data=data,
+    ) as input_path, temporary_media_path(suffix=".mp4") as output_path:
         completed = subprocess.run(
             [
                 "ffmpeg",
                 "-y",
                 "-i",
-                str(input_handle.name),
+                str(input_path),
                 "-vf",
                 f"scale=-2:{proxy_height}",
                 "-an",
@@ -69,17 +93,21 @@ def build_proxy_video_bytes(data: bytes, *, proxy_height: int, suffix: str = ".m
                 "yuv420p",
                 "-movflags",
                 "+faststart",
-                str(output_handle.name),
+                str(output_path),
             ],
             check=False,
             capture_output=True,
             text=True,
         )
         if completed.returncode != 0:
-            detail = completed.stderr.strip() or completed.stdout.strip() or "ffmpeg failed"
+            detail = (
+                completed.stderr.strip()
+                or completed.stdout.strip()
+                or "ffmpeg failed"
+            )
             raise ValueError(detail)
 
-        return Path(output_handle.name).read_bytes()
+        return output_path.read_bytes()
 
 
 def find_video_stream(document: Mapping[str, Any]) -> dict[str, Any]:
@@ -164,7 +192,9 @@ def aspect_ratio_label(width: int, height: int) -> str:
 
 def even_scaled_width(*, width: int, height: int, target_height: int) -> int:
     if width <= 0 or height <= 0 or target_height <= 0:
-        raise ValueError("width, height, and target_height must be greater than zero")
+        raise ValueError(
+            "width, height, and target_height must be greater than zero"
+        )
     scaled_width = width * (target_height / height)
     even_width = int(round(scaled_width / 2.0) * 2)
     return max(2, even_width)
