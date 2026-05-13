@@ -10,11 +10,14 @@ from typing import Any
 from uuid import uuid4
 
 from .artifact_helper import ArtifactHelper
+from .audio_profile import merge_audio_enhancement_service_config
 from .contracts import ARTIFACT_CONTENT_TYPES
 from .contracts import KNOWN_PIPELINE_IDS
 from .contracts import PIPELINE_ID_REFRAME_16X9_TO_9X16
+from .contracts import PIPELINE_ID_REFRAME_16X9_TO_9X16_SMOOTH_AUDIO
 from .contracts import PIPELINE_ID_REFRAME_AUDIO_QUALITY
 from .contracts import PIPELINE_ID_REFRAME_DEAD_AIR
+from .contracts import PIPELINE_ID_REFRAME_DEAD_AIR_ENHANCED
 from .contracts import PIPELINE_STEPS_BY_ID
 from .contracts import repo_root
 from .manifest_manager import ManifestManager
@@ -35,7 +38,10 @@ from .pipeline_runner import artifact_keys_for_step
 
 _JOB_MANIFEST_TEMPLATES_BY_PIPELINE_ID = {
     PIPELINE_ID_REFRAME_16X9_TO_9X16: "contracts/examples/job_manifest.reframe_16x9_to_9x16.sample.json",
+    PIPELINE_ID_REFRAME_16X9_TO_9X16_SMOOTH_AUDIO: "contracts/examples/job_manifest.reframe_16x9_to_9x16_smooth_audio.sample.json",
+    # Legacy ID kept for templates/tests; create_job maps this to dead_air_enhanced.
     PIPELINE_ID_REFRAME_DEAD_AIR: "contracts/examples/job_manifest.reframe_16x9_to_9x16_dead_air.sample.json",
+    PIPELINE_ID_REFRAME_DEAD_AIR_ENHANCED: "contracts/examples/job_manifest.reframe_16x9_to_9x16_dead_air_enhanced.sample.json",
     PIPELINE_ID_REFRAME_AUDIO_QUALITY: "contracts/examples/job_manifest.reframe_16x9_to_9x16_audio_quality.sample.json",
 }
 
@@ -72,6 +78,10 @@ class OrchestratorService:
         job_id: str | None = None,
         pipeline_id: str = PIPELINE_ID_REFRAME_16X9_TO_9X16,
         enabled_features: dict[str, bool] | None = None,
+        audio_profile: str | None = None,
+        audio_enhancement_partial: dict[str, Any] | None = None,
+        output_audio_source: str | None = None,
+        vad_audio_source: str | None = None,
     ) -> dict[str, Any]:
         if not source_bytes:
             raise ValueError("source_bytes must not be empty.")
@@ -80,6 +90,10 @@ class OrchestratorService:
             raise ValueError(
                 f"Unknown pipeline_id '{pipeline_id}'. Expected one of: {allowed}."
             )
+
+        pipeline_id, enabled_features = _coerce_dead_air_pipeline_to_enhanced(
+            pipeline_id, enabled_features
+        )
 
         created_at = utc_now()
         resolved_job_id = validate_job_id(job_id or f"job_{uuid4().hex[:12]}")
@@ -94,6 +108,10 @@ class OrchestratorService:
             content_type=content_type,
             checksum_sha256=hashlib.sha256(source_bytes).hexdigest(),
             enabled_features_overrides=enabled_features,
+            audio_profile=audio_profile,
+            audio_enhancement_partial=audio_enhancement_partial,
+            output_audio_source=output_audio_source,
+            vad_audio_source=vad_audio_source,
         )
 
         self.artifact_helper.upload_source_video(
@@ -112,6 +130,13 @@ class OrchestratorService:
         job_manifest = self.manifest_manager.read_job_manifest(resolved_job_id)
         pipeline = job_manifest.get("pipeline", {})
         raw_pipeline_id = pipeline.get("pipeline_id", PIPELINE_ID_REFRAME_16X9_TO_9X16)
+        service_cfg = job_manifest.get("service_config")
+        audio_enhancement = None
+        if isinstance(service_cfg, dict):
+            ae = service_cfg.get("audio_enhancement")
+            if isinstance(ae, dict):
+                audio_enhancement = ae
+
         return {
             "job_id": resolved_job_id,
             "service_status": service_status,
@@ -121,6 +146,18 @@ class OrchestratorService:
                 "steps": pipeline.get("steps", []),
             },
             "enabled_features": job_manifest.get("enabled_features", {}),
+            "audio_profile": job_manifest.get("audio_profile"),
+            "audio_enhancement": audio_enhancement,
+            "output_audio_source": (
+                (service_cfg.get("render_plan_compiler") or {}).get("output_audio_source")
+                if isinstance(service_cfg, dict)
+                else None
+            ),
+            "vad_audio_source": (
+                (service_cfg.get("voice_activity_detection") or {}).get("audio_source")
+                if isinstance(service_cfg, dict)
+                else None
+            ),
             "paths": {
                 "job_prefix": job_prefix(resolved_job_id),
                 "input": input_path(resolved_job_id),
@@ -198,6 +235,10 @@ class OrchestratorService:
         content_type: str,
         checksum_sha256: str,
         enabled_features_overrides: dict[str, bool] | None = None,
+        audio_profile: str | None = None,
+        audio_enhancement_partial: dict[str, Any] | None = None,
+        output_audio_source: str | None = None,
+        vad_audio_source: str | None = None,
     ) -> dict[str, Any]:
         template = self.job_manifest_templates.get(pipeline_id)
         if template is None:
@@ -228,12 +269,123 @@ class OrchestratorService:
                     existing.pop(feature_key, None)
             manifest["enabled_features"] = existing
 
+        steps = manifest.get("pipeline", {}).get("steps") or []
+        has_audio_enhancement = "audio_enhancement" in steps
+        if audio_profile or audio_enhancement_partial:
+            if not has_audio_enhancement:
+                raise ValueError(
+                    "audio_profile and audio_enhancement are only allowed for pipelines "
+                    "that include the audio_enhancement step."
+                )
+            service_config = manifest.setdefault("service_config", {})
+            base_ae = service_config.get("audio_enhancement")
+            if not isinstance(base_ae, dict):
+                base_ae = {}
+            service_config["audio_enhancement"] = merge_audio_enhancement_service_config(
+                base_ae,
+                profile_id=audio_profile,
+                partial=audio_enhancement_partial,
+            )
+        if audio_profile:
+            manifest["audio_profile"] = audio_profile
+        else:
+            manifest.pop("audio_profile", None)
+
+        # Loudness/denoise presets (podcast / social / broadcast) bake into
+        # ``enhanced_audio.wav``; muxing final MP4 from source video would hide
+        # that work. When the client omits ``output_audio_source``, default the
+        # render plan to ``enhanced_wav`` for those profiles. Explicit
+        # ``output_audio_source`` always wins (e.g. force source track).
+        if output_audio_source is None and audio_profile in {
+            "podcast",
+            "social",
+            "broadcast",
+        }:
+            if has_audio_enhancement:
+                rpc = manifest.setdefault("service_config", {}).setdefault(
+                    "render_plan_compiler", {}
+                )
+                rpc["output_audio_source"] = "enhanced_wav"
+
+        _apply_output_audio_source_manifest(
+            manifest,
+            output_audio_source=output_audio_source,
+        )
+        _apply_vad_audio_source_manifest(manifest, vad_audio_source=vad_audio_source)
+
         return manifest
+
+
+_VALID_OUTPUT_AUDIO_SOURCE_IDS = frozenset({"source_video", "enhanced_wav"})
+_VALID_VAD_AUDIO_SOURCE_IDS = frozenset(
+    {"extracted_audio", "enhanced_audio", "enhanced_audio_or_extracted"}
+)
+
+
+def _apply_output_audio_source_manifest(
+    manifest: dict[str, Any],
+    *,
+    output_audio_source: str | None,
+) -> None:
+    if output_audio_source is None:
+        return
+    if output_audio_source not in _VALID_OUTPUT_AUDIO_SOURCE_IDS:
+        allowed = ", ".join(sorted(_VALID_OUTPUT_AUDIO_SOURCE_IDS))
+        raise ValueError(
+            f"Invalid output_audio_source '{output_audio_source}'. Expected one of: {allowed}."
+        )
+    steps = manifest.get("pipeline", {}).get("steps") or []
+    if output_audio_source == "enhanced_wav" and "audio_enhancement" not in steps:
+        raise ValueError(
+            "output_audio_source=enhanced_wav requires a pipeline that includes "
+            "the audio_enhancement step."
+        )
+    service_config = manifest.setdefault("service_config", {})
+    rpc = service_config.setdefault("render_plan_compiler", {})
+    rpc["output_audio_source"] = output_audio_source
+
+
+def _apply_vad_audio_source_manifest(
+    manifest: dict[str, Any],
+    *,
+    vad_audio_source: str | None,
+) -> None:
+    if vad_audio_source is None:
+        return
+    if vad_audio_source not in _VALID_VAD_AUDIO_SOURCE_IDS:
+        allowed = ", ".join(sorted(_VALID_VAD_AUDIO_SOURCE_IDS))
+        raise ValueError(
+            f"Invalid vad_audio_source '{vad_audio_source}'. Expected one of: {allowed}."
+        )
+    steps = manifest.get("pipeline", {}).get("steps") or []
+    if "voice_activity_detection" not in steps:
+        raise ValueError(
+            "vad_audio_source is only allowed for pipelines that include voice_activity_detection."
+        )
+    service_config = manifest.setdefault("service_config", {})
+    vad = service_config.setdefault("voice_activity_detection", {})
+    vad["audio_source"] = vad_audio_source
 
 
 def _load_job_manifest_template(relative_path: str) -> dict[str, Any]:
     template_path = repo_root() / relative_path
     return json.loads(template_path.read_text(encoding="utf-8"))
+
+
+def _coerce_dead_air_pipeline_to_enhanced(
+    pipeline_id: str,
+    enabled_features: dict[str, bool] | None,
+) -> tuple[str, dict[str, bool] | None]:
+    """Use the dead-air + FFmpeg prep pipeline whenever the legacy dead-air id is requested.
+
+    Callers may still pass ``reframe_16x9_to_9x16_dead_air`` for compatibility; job manifests
+    always materialize as ``reframe_16x9_to_9x16_dead_air_enhanced`` with ``enhance_audio`` on.
+    """
+    if pipeline_id != PIPELINE_ID_REFRAME_DEAD_AIR:
+        return pipeline_id, enabled_features
+    merged: dict[str, bool] = dict(enabled_features) if enabled_features else {}
+    merged["enhance_audio"] = True
+    return PIPELINE_ID_REFRAME_DEAD_AIR_ENHANCED, merged
 
 
 _DEFAULT_STEP_TIMEOUTS_SECONDS: dict[str, float] = {

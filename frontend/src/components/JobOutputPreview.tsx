@@ -7,6 +7,7 @@ export function JobOutputPreview({
   eyebrow = "Output",
   downloadName,
   videoClassName = "mx-auto max-h-[min(70vh,560px)] w-full max-w-md rounded-md bg-black",
+  optionsSummary,
 }: {
   jobId: string;
   artifactKey: string;
@@ -14,6 +15,8 @@ export function JobOutputPreview({
   eyebrow?: string;
   downloadName: string;
   videoClassName?: string;
+  /** Multi-line Thai summary: preset flags + audio mux mode (shown above the player). */
+  optionsSummary?: string | null;
 }) {
   const src = `/api/jobs/${encodeURIComponent(jobId)}/artifacts/${encodeURIComponent(artifactKey)}`;
 
@@ -23,6 +26,11 @@ export function JobOutputPreview({
         <p className="text-xs uppercase tracking-widest text-zinc-500">{eyebrow}</p>
         <h2 className="text-lg font-medium text-zinc-100">{title}</h2>
       </div>
+      {optionsSummary ? (
+        <p className="whitespace-pre-line rounded-md border border-zinc-800/90 bg-zinc-950/70 px-3 py-2 text-xs leading-relaxed text-zinc-300">
+          {optionsSummary}
+        </p>
+      ) : null}
       <video
         src={src}
         controls

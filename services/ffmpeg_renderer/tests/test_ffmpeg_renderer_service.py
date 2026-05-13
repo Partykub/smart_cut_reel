@@ -67,7 +67,7 @@ class FFmpegRendererServiceTests(unittest.TestCase):
         self.store.upload_json(
             "jobs/job_test/artifacts/render_plan.json",
             {
-                "schema_version": "1.0.0",
+                "schema_version": "1.1.0",
                 "job_id": "job_test",
                 "audio_policy": "copy_if_possible_else_aac",
                 "source_video": {"object_key": "jobs/job_test/input/source.mp4"},
@@ -162,7 +162,7 @@ class FFmpegRendererWithoutBodyTracksTests(unittest.TestCase):
         store.upload_json(
             "jobs/job_test/artifacts/render_plan.json",
             {
-                "schema_version": "1.0.0",
+                "schema_version": "1.1.0",
                 "job_id": "job_test",
                 "audio_policy": "copy_if_possible_else_aac",
                 "source_video": {"object_key": "jobs/job_test/input/source.mp4"},
@@ -241,7 +241,7 @@ class FFmpegRendererSmoothCropWithCutsTests(unittest.TestCase):
         self.store.upload_json(
             "jobs/job_test/artifacts/render_plan.json",
             {
-                "schema_version": "1.0.0",
+                "schema_version": "1.1.0",
                 "job_id": "job_test",
                 "audio_policy": "aac_transcode",
                 "source_video": {"object_key": "jobs/job_test/input/source.mp4"},
@@ -405,7 +405,7 @@ class FFmpegRendererSmoothTests(unittest.TestCase):
         self.store.upload_json(
             "jobs/job_test/artifacts/render_plan.json",
             {
-                "schema_version": "1.0.0",
+                "schema_version": "1.1.0",
                 "job_id": "job_test",
                 "audio_policy": "copy_if_possible_else_aac",
                 "source_video": {"object_key": "jobs/job_test/input/source.mp4"},
@@ -485,6 +485,125 @@ class FFmpegRendererSmoothTests(unittest.TestCase):
         overlay_path.write_bytes(overlay_data)
         streams = _probe_streams(overlay_path)["streams"]
         self.assertEqual(streams[0]["codec_name"], "h264")
+
+
+@unittest.skipUnless(_ffmpeg_available(), "ffmpeg not installed")
+class FFmpegRendererExternalWavMuxTests(unittest.TestCase):
+    def test_static_crop_muxes_audio_from_external_wav(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        root = Path(temp_dir.name)
+        store = FilesystemObjectStore(root)
+        src_mp4 = root / "in.mp4"
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=duration=2:size=320x180:rate=30",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=2:sample_rate=44100",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-shortest",
+                str(src_mp4),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        alt_wav = root / "alt.wav"
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=880:duration=2:sample_rate=44100",
+                "-ac",
+                "1",
+                "-c:a",
+                "pcm_s16le",
+                str(alt_wav),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        store.upload_bytes(
+            "jobs/job_test/input/source.mp4",
+            src_mp4.read_bytes(),
+            content_type="video/mp4",
+        )
+        store.upload_bytes(
+            "jobs/job_test/artifacts/enhanced_audio.wav",
+            alt_wav.read_bytes(),
+            content_type="audio/wav",
+        )
+        store.upload_json(
+            "jobs/job_test/artifacts/render_plan.json",
+            {
+                "schema_version": "1.1.0",
+                "job_id": "job_test",
+                "audio_policy": "copy_if_possible_else_aac",
+                "source_video": {"object_key": "jobs/job_test/input/source.mp4"},
+                "output_audio": {
+                    "source": "external_wav",
+                    "object_key": "jobs/job_test/artifacts/enhanced_audio.wav",
+                },
+                "target_resolution": {"width": 108, "height": 192},
+                "metadata": {"duration": 2.0, "fps": 30.0},
+                "crop_plan": {
+                    "crop_width": 96,
+                    "crop_height": 180,
+                    "keyframes": [
+                        {"t": 0.0, "x": 112.0, "y": 0.0},
+                        {"t": 2.0, "x": 112.0, "y": 0.0},
+                    ],
+                },
+                "render_mode": "static_crop",
+            },
+        )
+        store.upload_json(
+            "jobs/job_test/manifests/artifact_manifest.json",
+            {
+                "artifacts": {
+                    "render_plan": {"object_key": "jobs/job_test/artifacts/render_plan.json"},
+                }
+            },
+        )
+        request = RunRequest(
+            job_id="job_test",
+            step_id="ffmpeg_renderer",
+            minio=RunMinIO(bucket="smart-cut", prefix="jobs/job_test/"),
+            inputs={
+                "artifact_manifest": "jobs/job_test/manifests/artifact_manifest.json",
+            },
+            expected_outputs={
+                "final_9x16": "jobs/job_test/outputs/final_9x16.mp4",
+                "source_overlay": "jobs/job_test/outputs/source_overlay.mp4",
+            },
+            config={"video_codec": "libx264", "audio_codec": "aac"},
+        )
+        FFmpegRendererService().run(build_context(request, store))
+        out_path = root / "out.mp4"
+        out_path.write_bytes(store.download_bytes(request.expected_outputs["final_9x16"]))
+        streams = _probe_streams(out_path)["streams"]
+        kinds = {s["codec_type"] for s in streams}
+        self.assertIn("video", kinds)
+        self.assertIn("audio", kinds)
+        audio = next(s for s in streams if s["codec_type"] == "audio")
+        self.assertEqual(audio["codec_name"], "aac")
+        temp_dir.cleanup()
 
 
 class FFmpegRendererTrackLookupTests(unittest.TestCase):

@@ -3,10 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getJobStatus } from "@/lib/api";
+import { buildUploadAlignedJobSummaryLines } from "@/lib/uploadPresets";
 import {
   isTerminalStatus,
   PIPELINE_ID_REFRAME_AUDIO_QUALITY,
   PIPELINE_ID_REFRAME_DEAD_AIR,
+  PIPELINE_ID_REFRAME_DEAD_AIR_ENHANCED,
+  PIPELINE_ID_REFRAME_SMOOTH_AUDIO,
   type JobStatusResponse,
 } from "@/lib/types";
 
@@ -105,9 +108,24 @@ export function JobDashboard({ jobId }: { jobId: string }) {
   const enabledFeatures = data.enabled_features ?? {};
   const pid = pipeline?.pipeline_id;
   const isDeadAirPipeline =
-    pid === PIPELINE_ID_REFRAME_DEAD_AIR || pid === PIPELINE_ID_REFRAME_AUDIO_QUALITY;
+    pid === PIPELINE_ID_REFRAME_DEAD_AIR ||
+    pid === PIPELINE_ID_REFRAME_DEAD_AIR_ENHANCED ||
+    pid === PIPELINE_ID_REFRAME_AUDIO_QUALITY;
+  const isLegacyDeadAirOnly = pid === PIPELINE_ID_REFRAME_DEAD_AIR;
   const isAudioQualityPipeline = pid === PIPELINE_ID_REFRAME_AUDIO_QUALITY;
+  const isSmoothAudioPipeline = pid === PIPELINE_ID_REFRAME_SMOOTH_AUDIO;
   const hasCutPlan = Boolean(data.artifacts?.cut_plan);
+  const waveformAnalysisUrl =
+    data.artifacts?.enhanced_audio != null
+      ? `/api/jobs/${encodeURIComponent(jobId)}/artifacts/enhanced_audio`
+      : data.artifacts?.extracted_audio != null
+        ? `/api/jobs/${encodeURIComponent(jobId)}/artifacts/extracted_audio`
+        : null;
+  /** Same timeline as analysis strip — raw extract when prep output exists (A/B waveform). */
+  const waveformCompareUrl =
+    data.artifacts?.enhanced_audio != null && data.artifacts?.extracted_audio != null
+      ? `/api/jobs/${encodeURIComponent(jobId)}/artifacts/extracted_audio`
+      : null;
   // Only show transcript card when filler-word cutting is actually enabled.
   // When disabled, transcription is skipped server-side and the artifact is
   // an empty placeholder; rendering it confuses the user (looks like the
@@ -122,17 +140,34 @@ export function JobDashboard({ jobId }: { jobId: string }) {
         <div>
           <p className="text-xs uppercase tracking-widest text-zinc-500">Job</p>
           <h1 className="font-mono text-2xl text-zinc-100">{data.job_id}</h1>
-          {isDeadAirPipeline ? (
-            <p className="mt-1 text-xs text-violet-300">
-              ชุดคิว: reframe + dead air · remove_dead_air ={" "}
+          {isSmoothAudioPipeline ? (
+            <p className="mt-1 text-xs text-emerald-200/85">
+              Queue: vertical reframe + output audio (11 steps) · remove_dead_air ={" "}
+              <span className="font-mono">{String(enabledFeatures.remove_dead_air ?? false)}</span>
+              {" · "}
+              enhance_audio ={" "}
+              <span className="font-mono">{String(enabledFeatures.enhance_audio ?? false)}</span>
+            </p>
+          ) : null}
+          {isDeadAirPipeline && !isAudioQualityPipeline ? (
+            <p className="mt-1 text-xs text-amber-300">
+              Queue: reframe + dead air
+              {isLegacyDeadAirOnly
+                ? " (12 steps — no audio prep before VAD)"
+                : " (13 steps — conditioned audio then silence trim)"}
+              {" · "}
+              remove_dead_air ={" "}
               <span className="font-mono">
                 {String(enabledFeatures.remove_dead_air ?? false)}
               </span>
+              {" · "}
+              enhance_audio ={" "}
+              <span className="font-mono">{String(enabledFeatures.enhance_audio ?? false)}</span>
             </p>
           ) : null}
           {isAudioQualityPipeline ? (
             <p className="mt-1 text-xs text-amber-300">
-              ชุดคิว: reframe + dead air + เสียง/ถอดความ · enhance_audio ={" "}
+              Queue: reframe + dead air + transcription / filler cuts (14 steps) · enhance_audio ={" "}
               <span className="font-mono">
                 {String(enabledFeatures.enhance_audio ?? false)}
               </span>{" "}
@@ -159,6 +194,21 @@ export function JobDashboard({ jobId }: { jobId: string }) {
         />
       </header>
 
+      <section
+        className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-950/40 p-4"
+        aria-labelledby="job-output-options-heading"
+      >
+        <div>
+          <p className="text-xs uppercase tracking-widest text-zinc-500">Output</p>
+          <h2 id="job-output-options-heading" className="text-base font-medium text-zinc-100">
+            MP4 audio & options used for this job
+          </h2>
+        </div>
+        <p className="whitespace-pre-line rounded-md border border-zinc-800/90 bg-zinc-950/70 px-3 py-2 text-xs leading-relaxed text-zinc-300">
+          {buildUploadAlignedJobSummaryLines(data)}
+        </p>
+      </section>
+
       {error ? (
         <p className="rounded-md border border-amber-900/40 bg-amber-950/40 px-3 py-2 text-sm text-amber-300">
           Last refresh failed: {error}
@@ -174,7 +224,12 @@ export function JobDashboard({ jobId }: { jobId: string }) {
         isTriggeringRun={isTriggeringRun}
       />
       {hasCutPlan ? (
-        <CutPlanCard jobId={jobId} enabledFeatures={enabledFeatures} />
+        <CutPlanCard
+          jobId={jobId}
+          enabledFeatures={enabledFeatures}
+          waveformAnalysisUrl={waveformAnalysisUrl}
+          waveformCompareUrl={waveformCompareUrl}
+        />
       ) : null}
       {hasTranscript ? <TranscriptCard jobId={jobId} /> : null}
       {data.artifacts.final_9x16 ? (

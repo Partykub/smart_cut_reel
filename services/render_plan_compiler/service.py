@@ -17,7 +17,9 @@ from services.common.runtime import RunResponse
 from services.common.runtime import ServiceContext
 
 
-RENDER_PLAN_SCHEMA_VERSION = "1.0.0"
+RENDER_PLAN_SCHEMA_VERSION = "1.1.0"
+
+_VALID_OUTPUT_AUDIO_SOURCES = frozenset({"source_video", "enhanced_wav"})
 
 _VALID_COMPILER_RENDER_MODES = frozenset(
     {"static_crop", "smooth_crop", "smooth_crop_with_cuts", "full_frame_with_cuts"}
@@ -119,6 +121,19 @@ class RenderPlanCompilerService:
             6,
         )
 
+        output_audio_source = str(config.get("output_audio_source") or "source_video")
+        if output_audio_source not in _VALID_OUTPUT_AUDIO_SOURCES:
+            allowed = ", ".join(sorted(_VALID_OUTPUT_AUDIO_SOURCES))
+            raise ValueError(
+                f"Invalid render_plan_compiler.output_audio_source '{output_audio_source}'. "
+                f"Allowed: {allowed}."
+            )
+        output_audio = self._resolve_output_audio_payload(
+            output_audio_source=output_audio_source,
+            artifacts=artifacts,
+            context=context,
+        )
+
         payload: dict[str, Any] = {
             "schema_version": RENDER_PLAN_SCHEMA_VERSION,
             "job_id": context.job_id,
@@ -142,6 +157,7 @@ class RenderPlanCompilerService:
             },
             "segments": segments,
             "render_mode": output_render_mode,
+            "output_audio": output_audio,
         }
 
         out_key = context.expected_output_key("render_plan")
@@ -199,6 +215,7 @@ class RenderPlanCompilerService:
             "crop_representation": "keyframe_list",
             "audio_policy": "copy_if_possible_else_aac",
             "compiler_render_mode": "smooth_crop",
+            "output_audio_source": "source_video",
         }
         defaults.update(context.request.config)
 
@@ -212,6 +229,23 @@ class RenderPlanCompilerService:
         if compiler_mode not in _VALID_COMPILER_RENDER_MODES:
             raise ValueError(f"Invalid compiler_render_mode '{compiler_mode}'")
         return defaults
+
+    def _resolve_output_audio_payload(
+        self,
+        *,
+        output_audio_source: str,
+        artifacts: dict[str, Any],
+        context: ServiceContext,
+    ) -> dict[str, Any]:
+        if output_audio_source == "source_video":
+            return {"source": "source_video", "object_key": None}
+        enhanced_key = self._artifact_key(artifacts, "enhanced_audio")
+        if not isinstance(enhanced_key, str) or not context.exists(enhanced_key):
+            raise ValueError(
+                "output_audio_source=enhanced_wav requires a registered enhanced_audio "
+                "artifact that exists in storage before render_plan_compiler runs."
+            )
+        return {"source": "external_wav", "object_key": enhanced_key}
 
     def _synthetic_full_frame_smooth(
         self,

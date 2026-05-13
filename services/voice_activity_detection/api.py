@@ -24,8 +24,7 @@ def _start_silero_warmup_thread() -> None:
     """Kick off a background thread that loads the Silero VAD ONNX model.
 
     Skipped entirely when ``VAD_DISABLE_WARMUP`` is truthy (e.g. unit tests
-    that should not depend on network access). The energy backend never
-    needs warmup.
+    that should not depend on network access).
     """
     if os.getenv("VAD_DISABLE_WARMUP", "").lower() in {"1", "true", "yes"}:
         logger.info("vad warmup disabled by VAD_DISABLE_WARMUP env")

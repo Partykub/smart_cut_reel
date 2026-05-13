@@ -33,6 +33,8 @@ Status:
 - Errors are plain strings at the top level of `service_status.json`.
 - Spatial coordinates in downstream artifacts must use source-video resolution, even when detection runs on proxy media.
 - Time coordinates in `vad_segments.json` and `cut_plan.json` are measured against the source-video timeline.
+- Multipart `POST /jobs` (debug orchestrator) accepts optional `audio_profile` (`original` \| `podcast` \| `social` \| `broadcast`) and optional `audio_enhancement` (JSON object with allowed keys from `service_config.audio_enhancement`); both apply only when the selected pipeline includes the `audio_enhancement` step.
+- Optional `output_audio_source` (`source_video` \| `enhanced_wav`) lives under `service_config.render_plan_compiler` and is copied into `render_plan.json` as `output_audio` for the FFmpeg renderer; `enhanced_wav` requires the `audio_enhancement` pipeline step. Optional `vad_audio_source` maps to `service_config.voice_activity_detection.audio_source` (`extracted_audio` \| `enhanced_audio` \| `enhanced_audio_or_extracted`).
 
 ## Pipeline Step IDs
 

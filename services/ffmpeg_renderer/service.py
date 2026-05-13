@@ -39,6 +39,13 @@ def _has_audio_stream(probe: dict[str, Any]) -> bool:
     return any(isinstance(s, dict) and s.get("codec_type") == "audio" for s in streams)
 
 
+def _wav_file_has_audio(path: Path) -> bool:
+    try:
+        return path.is_file() and path.stat().st_size > 44
+    except OSError:
+        return False
+
+
 class FFmpegRendererService:
     service_id = "ffmpeg_renderer"
 
@@ -80,10 +87,20 @@ class FFmpegRendererService:
         th = _even_dimension(target_h)
 
         with tempfile.TemporaryDirectory() as tmp:
-            src_path = Path(tmp) / "source.mp4"
-            out_path = Path(tmp) / "out.mp4"
-            overlay_path = Path(tmp) / "source_overlay.mp4"
+            tmp_path = Path(tmp)
+            src_path = tmp_path / "source.mp4"
+            out_path = tmp_path / "out.mp4"
+            overlay_path = tmp_path / "source_overlay.mp4"
             src_path.write_bytes(source_bytes)
+
+            audio_src_path = self._prepare_output_audio_source(
+                plan=plan,
+                context=context,
+                temp_root=tmp_path,
+                fallback_video_path=src_path,
+            )
+            source_probe = probe_video_bytes(source_bytes)
+            source_has_audio = _has_audio_stream(source_probe)
 
             if render_mode == "smooth_crop_with_cuts":
                 self._render_with_cuts(
@@ -95,6 +112,8 @@ class FFmpegRendererService:
                     target_w=tw,
                     target_h=th,
                     ffmpeg_config=ffmpeg_config,
+                    audio_src_path=audio_src_path,
+                    source_has_audio_stream=source_has_audio,
                 )
             elif render_mode == "smooth_crop":
                 self._render_smooth_segments(
@@ -106,6 +125,8 @@ class FFmpegRendererService:
                     target_w=tw,
                     target_h=th,
                     ffmpeg_config=ffmpeg_config,
+                    audio_src_path=audio_src_path,
+                    source_has_audio_stream=source_has_audio,
                 )
             else:
                 self._render_static_crop(
@@ -119,6 +140,8 @@ class FFmpegRendererService:
                     ffmpeg_config=ffmpeg_config,
                     source_bytes=source_bytes,
                     audio_policy=str(plan.get("audio_policy") or "copy_if_possible_else_aac"),
+                    audio_src_path=audio_src_path,
+                    source_has_audio_stream=source_has_audio,
                 )
 
             self._render_source_overlay(
@@ -145,6 +168,8 @@ class FFmpegRendererService:
         defaults = {
             "video_codec": "libx264",
             "audio_codec": "aac",
+            "audio_transition": "crossfade",
+            "audio_transition_seconds": 0.02,
         }
         defaults.update(context.request.config)
         return defaults
@@ -154,6 +179,29 @@ class FFmpegRendererService:
         if not key or not context.exists(key):
             raise ValueError("request is missing artifact_manifest for ffmpeg_renderer")
         return context.read_json(key)
+
+    def _prepare_output_audio_source(
+        self,
+        *,
+        plan: dict[str, Any],
+        context: ServiceContext,
+        temp_root: Path,
+        fallback_video_path: Path,
+    ) -> Path:
+        output_audio = plan.get("output_audio") or {}
+        mode = str(output_audio.get("source") or "source_video")
+        if mode == "source_video":
+            return fallback_video_path
+        if mode != "external_wav":
+            raise ValueError(f"Unsupported render_plan output_audio.source '{mode}'")
+        object_key = output_audio.get("object_key")
+        if not isinstance(object_key, str) or not object_key:
+            raise ValueError("render_plan output_audio.object_key is required for external_wav")
+        if not context.exists(object_key):
+            raise ValueError(f"output_audio object_key does not exist: {object_key}")
+        wav_path = temp_root / "output_master_audio.wav"
+        wav_path.write_bytes(context.read_bytes(object_key))
+        return wav_path
 
     def _raw_tracks(self, context: ServiceContext, artifact_manifest: dict[str, Any]) -> dict[str, Any]:
         raw_entry = artifact_manifest.get("artifacts", {}).get("body_tracks_raw", {})
@@ -175,6 +223,8 @@ class FFmpegRendererService:
         ffmpeg_config: dict[str, Any],
         source_bytes: bytes,
         audio_policy: str,
+        audio_src_path: Path,
+        source_has_audio_stream: bool,
     ) -> None:
         first = keyframes[0]
         cx = max(0, int(round(float(first.get("x") or 0.0))))
@@ -186,7 +236,67 @@ class FFmpegRendererService:
 
         vf = f"crop={crop_w_e}:{crop_h_e}:{cx}:{cy},scale={target_w}:{target_h}"
 
-        cmd: list[str] = [
+        use_external_wav = audio_src_path != src_path
+        has_audio = (
+            source_has_audio_stream if not use_external_wav else _wav_file_has_audio(audio_src_path)
+        )
+
+        if use_external_wav:
+            cmd: list[str] = [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(src_path),
+                "-i",
+                str(audio_src_path),
+                "-vf",
+                vf,
+                "-map",
+                "0:v:0",
+                "-map",
+                "1:a:0",
+                "-shortest",
+                "-c:v",
+                video_codec,
+                "-preset",
+                "fast",
+                "-crf",
+                "23",
+                "-pix_fmt",
+                "yuv420p",
+                "-movflags",
+                "+faststart",
+                "-c:a",
+                audio_codec,
+                "-b:a",
+                "192k",
+                str(out_path),
+            ]
+            if not has_audio:
+                cmd = [
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    str(src_path),
+                    "-vf",
+                    vf,
+                    "-c:v",
+                    video_codec,
+                    "-preset",
+                    "fast",
+                    "-crf",
+                    "23",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-movflags",
+                    "+faststart",
+                    "-an",
+                    str(out_path),
+                ]
+            self._run_ffmpeg(cmd)
+            return
+
+        cmd = [
             "ffmpeg",
             "-y",
             "-i",
@@ -205,7 +315,7 @@ class FFmpegRendererService:
             "+faststart",
         ]
 
-        if _has_audio_stream(probe):
+        if has_audio:
             if audio_policy == "aac_transcode":
                 cmd.extend(["-c:a", audio_codec, "-b:a", "192k"])
             else:
@@ -227,6 +337,8 @@ class FFmpegRendererService:
         target_w: int,
         target_h: int,
         ffmpeg_config: dict[str, Any],
+        audio_src_path: Path,
+        source_has_audio_stream: bool,
     ) -> None:
         crop_plan = plan.get("crop_plan") or {}
         keyframes = crop_plan.get("keyframes") or []
@@ -264,6 +376,8 @@ class FFmpegRendererService:
             ffmpeg_config=ffmpeg_config,
             audio_policy=str(plan.get("audio_policy") or "copy_if_possible_else_aac"),
             mux_full_audio=True,
+            audio_src_path=audio_src_path,
+            source_has_audio_stream=source_has_audio_stream,
         )
 
     def _render_with_cuts(
@@ -277,6 +391,8 @@ class FFmpegRendererService:
         target_w: int,
         target_h: int,
         ffmpeg_config: dict[str, Any],
+        audio_src_path: Path,
+        source_has_audio_stream: bool,
     ) -> None:
         segments = plan.get("segments") or []
         if not isinstance(segments, list) or not segments:
@@ -321,6 +437,8 @@ class FFmpegRendererService:
             ffmpeg_config=ffmpeg_config,
             audio_policy=str(plan.get("audio_policy") or "copy_if_possible_else_aac"),
             mux_full_audio=False,
+            audio_src_path=audio_src_path,
+            source_has_audio_stream=source_has_audio_stream,
         )
 
     def _render_keep_segments(
@@ -336,15 +454,38 @@ class FFmpegRendererService:
         ffmpeg_config: dict[str, Any],
         audio_policy: str,
         mux_full_audio: bool,
+        audio_src_path: Path,
+        source_has_audio_stream: bool,
     ) -> None:
         video_codec = str(ffmpeg_config.get("video_codec") or "libx264")
         audio_codec = str(ffmpeg_config.get("audio_codec") or "aac")
+        transition = str(ffmpeg_config.get("audio_transition") or "crossfade").lower()
+        transition_seconds = float(ffmpeg_config.get("audio_transition_seconds", 0.0))
+        if transition_seconds <= 0 or transition == "none":
+            transition = "none"
         temp_root = out_path.parent
 
         sub_segments: list[Path] = []
         audio_segments: list[Path] = []
         probe = probe_video_bytes(src_path.read_bytes())
-        has_audio = _has_audio_stream(probe)
+        use_external_wav = audio_src_path != src_path
+        has_audio = (
+            source_has_audio_stream if not use_external_wav else _wav_file_has_audio(audio_src_path)
+        )
+        effective_audio_policy = "aac_transcode" if use_external_wav else audio_policy
+        segment_durations = [
+            max(0.0, float(seg["source_end"]) - float(seg["source_start"]))
+            for seg in keep_segments
+        ]
+        min_segment_duration = min(segment_durations) if segment_durations else 0.0
+        crossfade_seconds = min(transition_seconds, max(0.0, min_segment_duration / 2.0))
+        use_crossfade = (
+            (not mux_full_audio)
+            and has_audio
+            and transition == "crossfade"
+            and crossfade_seconds > 0
+            and len(keep_segments) > 1
+        )
 
         for keep_index, keep in enumerate(keep_segments):
             keep_start = float(keep["source_start"])
@@ -382,17 +523,21 @@ class FFmpegRendererService:
                 self._run_ffmpeg(cmd)
                 sub_segments.append(seg_path)
 
-            if not mux_full_audio and has_audio:
+            if not mux_full_audio and has_audio and not use_crossfade:
                 audio_seg_path = temp_root / f"keep_{keep_index:04d}.audio.m4a"
                 seg_duration = float(keep["source_end"]) - keep_start
-                audio_args = ["-c:a", audio_codec, "-b:a", "192k"] if audio_policy == "aac_transcode" else ["-c:a", "copy"]
+                audio_args = (
+                    ["-c:a", audio_codec, "-b:a", "192k"]
+                    if effective_audio_policy == "aac_transcode"
+                    else ["-c:a", "copy"]
+                )
                 cmd = [
                     "ffmpeg",
                     "-y",
                     "-ss",
                     f"{keep_start:.6f}",
                     "-i",
-                    str(src_path),
+                    str(audio_src_path),
                     "-t",
                     f"{seg_duration:.6f}",
                     "-vn",
@@ -413,18 +558,31 @@ class FFmpegRendererService:
             self._mux_audio_if_needed(
                 src_path=src_path,
                 video_path=out_path,
-                audio_policy=audio_policy,
+                audio_policy=effective_audio_policy,
                 audio_codec=audio_codec,
                 probe=probe,
+                audio_src_path=audio_src_path,
             )
             return
 
-        if not audio_segments or not has_audio:
+        if not has_audio:
             shutil.move(video_only_path, out_path)
             return
 
         concat_audio_path = temp_root / "audio_only.m4a"
-        self._concat_audio(audio_segments, concat_audio_path)
+        if use_crossfade:
+            self._render_crossfaded_audio(
+                audio_src_path=audio_src_path,
+                out_path=concat_audio_path,
+                keep_segments=keep_segments,
+                fade_seconds=crossfade_seconds,
+                audio_codec=audio_codec,
+            )
+        elif audio_segments:
+            self._concat_audio(audio_segments, concat_audio_path)
+        else:
+            shutil.move(video_only_path, out_path)
+            return
 
         cmd = [
             "ffmpeg",
@@ -496,6 +654,57 @@ class FFmpegRendererService:
             str(list_path),
             "-c",
             "copy",
+            str(out_path),
+        ]
+        self._run_ffmpeg(cmd)
+
+    def _render_crossfaded_audio(
+        self,
+        *,
+        audio_src_path: Path,
+        out_path: Path,
+        keep_segments: list[dict[str, Any]],
+        fade_seconds: float,
+        audio_codec: str,
+    ) -> None:
+        if len(keep_segments) < 2:
+            raise ValueError("crossfade requires at least two segments")
+
+        filters: list[str] = []
+        for index, seg in enumerate(keep_segments):
+            seg_start = float(seg["source_start"])
+            seg_end = float(seg["source_end"])
+            pre_pad = fade_seconds / 2.0 if index > 0 else 0.0
+            post_pad = fade_seconds / 2.0 if index < len(keep_segments) - 1 else 0.0
+            trim_start = max(0.0, seg_start - pre_pad)
+            trim_end = max(trim_start, seg_end + post_pad)
+            filters.append(
+                f"[0:a]atrim=start={trim_start:.6f}:end={trim_end:.6f},"
+                f"asetpts=PTS-STARTPTS[a{index}]"
+            )
+
+        prev = "a0"
+        for index in range(1, len(keep_segments)):
+            out = f"a{index}_x"
+            filters.append(
+                f"[{prev}][a{index}]acrossfade=d={fade_seconds:.6f}:c1=tri:c2=tri[{out}]"
+            )
+            prev = out
+
+        filter_complex = ";".join(filters)
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(audio_src_path),
+            "-filter_complex",
+            filter_complex,
+            "-map",
+            f"[{prev}]",
+            "-c:a",
+            audio_codec,
+            "-b:a",
+            "192k",
             str(out_path),
         ]
         self._run_ffmpeg(cmd)
@@ -741,8 +950,13 @@ class FFmpegRendererService:
         audio_policy: str,
         audio_codec: str,
         probe: dict[str, Any],
+        audio_src_path: Path | None = None,
     ) -> None:
-        if not _has_audio_stream(probe):
+        audio_in = audio_src_path if audio_src_path is not None else src_path
+        use_external = audio_src_path is not None and audio_src_path != src_path
+        if not use_external and not _has_audio_stream(probe):
+            return
+        if use_external and not _wav_file_has_audio(audio_in):
             return
 
         tmp_audio_out = video_path.with_suffix(".muxed.mp4")
@@ -757,7 +971,7 @@ class FFmpegRendererService:
             "-i",
             str(video_path),
             "-i",
-            str(src_path),
+            str(audio_in),
             "-map",
             "0:v:0",
             "-map",

@@ -1,5 +1,5 @@
 {
-    "schema_version": "2.0.0",
+    "schema_version": "3.0.0",
     "job_id": "job_001",
     "created_at": "2026-05-08T10:00:00Z",
     "created_by": "orchestrator",
@@ -22,13 +22,12 @@
         "object_key": "jobs/job_001/outputs/final_9x16.mp4"
     },
     "pipeline": {
-        "pipeline_id": "reframe_16x9_to_9x16_dead_air",
+        "pipeline_id": "reframe_16x9_to_9x16_smooth_audio",
         "steps": [
             "validation",
             "media_metadata",
             "audio_extraction",
-            "voice_activity_detection",
-            "dead_air_cut_planning",
+            "audio_enhancement",
             "proxy_frame_sampling",
             "body_detection",
             "track_interpolation",
@@ -39,30 +38,24 @@
         ]
     },
     "enabled_features": {
-        "remove_dead_air": true
+        "enhance_audio": true
     },
     "service_config": {
         "audio_extraction": {
             "sample_rate": 48000,
             "channels": 1
         },
-        "voice_activity_detection": {
-            "model": "silero_v5",
-            "audio_source": "extracted_audio",
-            "speech_threshold": 0.5,
-            "min_speech_duration_seconds": 0.25,
-            "min_silence_duration_seconds": 0.2,
-            "speech_pad_seconds": 0.05
-        },
-        "dead_air_cut_planning": {
-            "silence_threshold_seconds": 0.8,
-            "keep_padding_before": 0.15,
-            "keep_padding_after": 0.2,
-            "min_keep_segment_seconds": 0.5
+        "audio_enhancement": {
+            "denoise_model": "off",
+            "target_lufs": -16.0,
+            "true_peak_db": -1.5,
+            "loudness_range": 11.0,
+            "highpass_frequency_hz": 0,
+            "loudness_normalization_enabled": true
         },
         "proxy_frame_sampling": {
-            "proxy_height": 540,
-            "sample_every_n_source_frames": 1
+            "sample_every_n_source_frames": 1,
+            "proxy_height": 540
         },
         "body_detection": {
             "subject_selection_strategy": "nearest_previous_crop_center",
@@ -91,8 +84,8 @@
         },
         "render_plan_compiler": {
             "crop_representation": "keyframe_list",
-            "audio_policy": "aac_transcode",
-            "compiler_render_mode": "smooth_crop_with_cuts",
+            "audio_policy": "copy_if_possible_else_aac",
+            "compiler_render_mode": "smooth_crop",
             "output_audio_source": "source_video"
         },
         "ffmpeg_renderer": {

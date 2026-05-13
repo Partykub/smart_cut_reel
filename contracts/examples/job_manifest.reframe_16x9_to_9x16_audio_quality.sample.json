@@ -47,15 +47,16 @@
     },
     "service_config": {
         "audio_extraction": {
-            "sample_rate": 16000,
+            "sample_rate": 48000,
             "channels": 1
         },
         "audio_enhancement": {
-            "denoise_model": "std",
+            "denoise_model": "off",
             "target_lufs": -16.0,
             "true_peak_db": -1.5,
             "loudness_range": 11.0,
-            "highpass_frequency_hz": 80
+            "highpass_frequency_hz": 0,
+            "loudness_normalization_enabled": true
         },
         "voice_activity_detection": {
             "model": "silero_v5",
@@ -63,8 +64,7 @@
             "speech_threshold": 0.5,
             "min_speech_duration_seconds": 0.25,
             "min_silence_duration_seconds": 0.2,
-            "speech_pad_seconds": 0.05,
-            "frame_duration_seconds": 0.03
+            "speech_pad_seconds": 0.05
         },
         "transcription": {
             "model": "medium",
@@ -115,7 +115,8 @@
         "render_plan_compiler": {
             "crop_representation": "keyframe_list",
             "audio_policy": "aac_transcode",
-            "compiler_render_mode": "smooth_crop_with_cuts"
+            "compiler_render_mode": "smooth_crop_with_cuts",
+            "output_audio_source": "source_video"
         },
         "ffmpeg_renderer": {
             "video_codec": "libx264",

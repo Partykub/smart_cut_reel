@@ -4,8 +4,12 @@ Reads ``extracted_audio.wav`` and produces ``enhanced_audio.wav`` after running
 a CPU-only ffmpeg filter chain that combines:
 
 * a high-pass filter (default 80 Hz) to remove HVAC rumble and DC bias,
-* RNNoise denoise via the bundled ffmpeg ``arnndn`` filter, and
-* EBU R128 loudness normalization (``loudnorm``) targeting -16 LUFS / -1.5 dBTP.
+* light FFT denoise (``afftdn``) when ``denoise_model`` is not ``off``, and
+* optional EBU R128 loudness normalization (``loudnorm``) when
+  ``loudness_normalization_enabled`` is true (default).
+
+When high-pass is off, denoise is off, and loudness normalization is off, the
+service copies ``extracted_audio.wav`` to ``enhanced_audio.wav`` without ffmpeg.
 
 The output WAV keeps the same sample rate and channel layout as the input so
 downstream services (``voice_activity_detection``, ``transcription``) can
@@ -47,30 +51,35 @@ class AudioEnhancementService:
         if duration <= 0:
             raise ValueError("audio_enhancement received an empty audio stream")
 
-        try:
-            enhanced_bytes, loudness_metrics = _run_ffmpeg_chain(
-                source_bytes,
-                sample_rate=sample_rate,
-                channels=channels,
-                config=config,
-            )
-        except _FfmpegFilterError as exc:
-            warnings.append(
-                ServiceWarning(
-                    code="AUDIO_ENHANCEMENT_FALLBACK",
-                    message=(
-                        "Audio enhancement filter chain failed; falling back to the "
-                        f"raw extracted audio. Underlying error: {exc}"
-                    ),
-                    step=self.service_id,
-                )
-            )
+        if _is_bypass(config):
             enhanced_bytes = source_bytes
-            loudness_metrics = {"input_lufs": None, "output_lufs": None}
+            loudness_metrics: dict[str, float | None] = {"input_lufs": None, "output_lufs": None}
+        else:
+            try:
+                enhanced_bytes, loudness_metrics = _run_ffmpeg_chain(
+                    source_bytes,
+                    sample_rate=sample_rate,
+                    channels=channels,
+                    config=config,
+                )
+            except _FfmpegFilterError as exc:
+                warnings.append(
+                    ServiceWarning(
+                        code="AUDIO_ENHANCEMENT_FALLBACK",
+                        message=(
+                            "Audio enhancement filter chain failed; falling back to the "
+                            f"raw extracted audio. Underlying error: {exc}"
+                        ),
+                        step=self.service_id,
+                    )
+                )
+                enhanced_bytes = source_bytes
+                loudness_metrics = {"input_lufs": None, "output_lufs": None}
 
         output_key = context.expected_output_key("enhanced_audio")
         context.write_bytes(output_key, enhanced_bytes, content_type="audio/wav")
 
+        ln_on = bool(config.get("loudness_normalization_enabled", True))
         return RunResponse(
             service_id=self.service_id,
             outputs={"enhanced_audio": output_key},
@@ -80,10 +89,23 @@ class AudioEnhancementService:
                 "channels": channels,
                 "duration_seconds": round(duration, 6),
                 "denoise_model": config["denoise_model"],
-                "target_lufs": float(config["target_lufs"]),
-                "true_peak_db": float(config["true_peak_db"]),
-                "loudness_range": float(config["loudness_range"]),
+                "target_lufs": (
+                    float(config["target_lufs"])
+                    if ln_on and config.get("target_lufs") is not None
+                    else None
+                ),
+                "true_peak_db": (
+                    float(config["true_peak_db"])
+                    if ln_on and config.get("true_peak_db") is not None
+                    else None
+                ),
+                "loudness_range": (
+                    float(config["loudness_range"])
+                    if ln_on and config.get("loudness_range") is not None
+                    else None
+                ),
                 "highpass_frequency_hz": float(config["highpass_frequency_hz"]),
+                "loudness_normalization_enabled": ln_on,
                 "input_lufs": loudness_metrics.get("input_lufs"),
                 "output_lufs": loudness_metrics.get("output_lufs"),
             },
@@ -113,8 +135,17 @@ class AudioEnhancementService:
             "true_peak_db": -1.5,
             "loudness_range": 11.0,
             "highpass_frequency_hz": 80,
+            "loudness_normalization_enabled": True,
         }
         defaults.update(context.request.config)
+
+        ln = defaults.get("loudness_normalization_enabled", True)
+        defaults["loudness_normalization_enabled"] = bool(ln)
+
+        if defaults["loudness_normalization_enabled"]:
+            defaults.setdefault("target_lufs", -16.0)
+            defaults.setdefault("true_peak_db", -1.5)
+            defaults.setdefault("loudness_range", 11.0)
 
         denoise = str(defaults["denoise_model"])
         if denoise not in _VALID_DENOISE_MODELS:
@@ -128,6 +159,16 @@ class AudioEnhancementService:
 
 class _FfmpegFilterError(RuntimeError):
     """Raised when the audio enhancement filter chain fails."""
+
+
+def _is_bypass(config: dict[str, Any]) -> bool:
+    if float(config["highpass_frequency_hz"]) > 0:
+        return False
+    if str(config["denoise_model"]) != "off":
+        return False
+    if bool(config.get("loudness_normalization_enabled", True)):
+        return False
+    return True
 
 
 def _probe_wav(audio_bytes: bytes) -> tuple[int, int, float]:
@@ -192,13 +233,14 @@ def _build_filter_chain(config: dict[str, Any]) -> str:
     if denoise_model != "off":
         filters.append("afftdn=nf=-25:nt=w")
 
-    target_lufs = float(config["target_lufs"])
-    true_peak_db = float(config["true_peak_db"])
-    loudness_range = float(config["loudness_range"])
-    filters.append(
-        "loudnorm="
-        f"I={target_lufs:.2f}:TP={true_peak_db:.2f}:LRA={loudness_range:.2f}:print_format=json"
-    )
+    if bool(config.get("loudness_normalization_enabled", True)):
+        target_lufs = float(config["target_lufs"])
+        true_peak_db = float(config["true_peak_db"])
+        loudness_range = float(config["loudness_range"])
+        filters.append(
+            "loudnorm="
+            f"I={target_lufs:.2f}:TP={true_peak_db:.2f}:LRA={loudness_range:.2f}:print_format=json"
+        )
 
     if not filters:
         return "anull"

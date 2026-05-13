@@ -20,13 +20,19 @@ SCHEMA_VERSION_JOB_MANIFEST_V3 = "3.0.0"
 
 # Canonical pipeline identifiers (feature-oriented).
 PIPELINE_ID_REFRAME_16X9_TO_9X16 = "reframe_16x9_to_9x16"
+# Smooth reframe + mono audio extract/enhance for mux; no VAD or dead-air cuts (11 steps).
+PIPELINE_ID_REFRAME_16X9_TO_9X16_SMOOTH_AUDIO = "reframe_16x9_to_9x16_smooth_audio"
+# Still accepted on APIs; ``OrchestratorService.create_job`` maps this to ``PIPELINE_ID_REFRAME_DEAD_AIR_ENHANCED``.
 PIPELINE_ID_REFRAME_DEAD_AIR = "reframe_16x9_to_9x16_dead_air"
+PIPELINE_ID_REFRAME_DEAD_AIR_ENHANCED = "reframe_16x9_to_9x16_dead_air_enhanced"
 PIPELINE_ID_REFRAME_AUDIO_QUALITY = "reframe_16x9_to_9x16_audio_quality"
 
 KNOWN_PIPELINE_IDS: frozenset[str] = frozenset(
     {
         PIPELINE_ID_REFRAME_16X9_TO_9X16,
+        PIPELINE_ID_REFRAME_16X9_TO_9X16_SMOOTH_AUDIO,
         PIPELINE_ID_REFRAME_DEAD_AIR,
+        PIPELINE_ID_REFRAME_DEAD_AIR_ENHANCED,
         PIPELINE_ID_REFRAME_AUDIO_QUALITY,
     }
 )
@@ -58,6 +64,22 @@ REFRAME_DEAD_AIR_STEP_IDS: tuple[str, ...] = (
     "ffmpeg_renderer",
 )
 
+REFRAME_DEAD_AIR_ENHANCED_STEP_IDS: tuple[str, ...] = (
+    "validation",
+    "media_metadata",
+    "audio_extraction",
+    "audio_enhancement",
+    "voice_activity_detection",
+    "dead_air_cut_planning",
+    "proxy_frame_sampling",
+    "body_detection",
+    "track_interpolation",
+    "reframe_planning",
+    "easing_smoothing",
+    "render_plan_compiler",
+    "ffmpeg_renderer",
+)
+
 REFRAME_AUDIO_QUALITY_STEP_IDS: tuple[str, ...] = (
     "validation",
     "media_metadata",
@@ -75,17 +97,37 @@ REFRAME_AUDIO_QUALITY_STEP_IDS: tuple[str, ...] = (
     "ffmpeg_renderer",
 )
 
+REFRAME_SMOOTH_AUDIO_STEP_IDS: tuple[str, ...] = (
+    "validation",
+    "media_metadata",
+    "audio_extraction",
+    "audio_enhancement",
+    "proxy_frame_sampling",
+    "body_detection",
+    "track_interpolation",
+    "reframe_planning",
+    "easing_smoothing",
+    "render_plan_compiler",
+    "ffmpeg_renderer",
+)
+
 PIPELINE_STEP_IDS = REFRAME_ONLY_STEP_IDS
 
 PIPELINE_STEPS_BY_ID: dict[str, tuple[str, ...]] = {
     PIPELINE_ID_REFRAME_16X9_TO_9X16: REFRAME_ONLY_STEP_IDS,
+    PIPELINE_ID_REFRAME_16X9_TO_9X16_SMOOTH_AUDIO: REFRAME_SMOOTH_AUDIO_STEP_IDS,
     PIPELINE_ID_REFRAME_DEAD_AIR: REFRAME_DEAD_AIR_STEP_IDS,
+    PIPELINE_ID_REFRAME_DEAD_AIR_ENHANCED: REFRAME_DEAD_AIR_ENHANCED_STEP_IDS,
     PIPELINE_ID_REFRAME_AUDIO_QUALITY: REFRAME_AUDIO_QUALITY_STEP_IDS,
 }
 
 KNOWN_PIPELINE_STEP_IDS: tuple[str, ...] = tuple(
     dict.fromkeys(
-        REFRAME_ONLY_STEP_IDS + REFRAME_DEAD_AIR_STEP_IDS + REFRAME_AUDIO_QUALITY_STEP_IDS
+        REFRAME_ONLY_STEP_IDS
+        + REFRAME_SMOOTH_AUDIO_STEP_IDS
+        + REFRAME_DEAD_AIR_STEP_IDS
+        + REFRAME_DEAD_AIR_ENHANCED_STEP_IDS
+        + REFRAME_AUDIO_QUALITY_STEP_IDS
     )
 )
 
@@ -164,6 +206,8 @@ def steps_for_pipeline(pipeline_id: str) -> tuple[str, ...]:
 
 def schema_version_for_pipeline(pipeline_id: str) -> str:
     if pipeline_id == PIPELINE_ID_REFRAME_AUDIO_QUALITY:
+        return SCHEMA_VERSION_JOB_MANIFEST_V3
+    if pipeline_id == PIPELINE_ID_REFRAME_DEAD_AIR_ENHANCED:
         return SCHEMA_VERSION_JOB_MANIFEST_V3
     if pipeline_id == PIPELINE_ID_REFRAME_DEAD_AIR:
         return SCHEMA_VERSION_JOB_MANIFEST_V2

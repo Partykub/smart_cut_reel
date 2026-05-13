@@ -60,7 +60,7 @@ def _generate_synthetic_clip(out_path: Path) -> None:
     """Write a 9-second 320x180 clip with a loud / silent / loud audio pattern.
 
     Three audio blocks at 0–3 s, 3–6 s, 6–9 s. The middle block is anullsrc
-    (digital silence) which the energy VAD must classify as silence.
+    (digital silence) which Silero VAD should classify as silence.
     """
     cmd = [
         _FFMPEG or "ffmpeg",
@@ -231,11 +231,12 @@ class DeadAirEndToEndTests(unittest.TestCase):
                     inputs={"artifact_manifest": self.artifact_manifest_key},
                     expected_outputs={"vad_segments": vad_key},
                     config={
-                        "model": "energy",
-                        "energy_threshold_db": -45.0,
+                        "model": "silero_v5",
+                        "audio_source": "extracted_audio",
+                        "speech_threshold": 0.5,
                         "min_speech_duration_seconds": 0.25,
                         "min_silence_duration_seconds": 0.2,
-                        "frame_duration_seconds": 0.03,
+                        "speech_pad_seconds": 0.05,
                     },
                 )
             )

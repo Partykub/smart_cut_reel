@@ -21,7 +21,9 @@ export type OverallStatus = StepStatus;
 /** Canonical pipeline presets returned by `GET …/status` (legacy IDs normalized server-side). */
 export type PipelineId =
   | "reframe_16x9_to_9x16"
+  | "reframe_16x9_to_9x16_smooth_audio"
   | "reframe_16x9_to_9x16_dead_air"
+  | "reframe_16x9_to_9x16_dead_air_enhanced"
   | "reframe_16x9_to_9x16_audio_quality";
 
 export interface StepState {
@@ -70,6 +72,17 @@ export interface PipelineSummary {
   steps: StepName[];
 }
 
+export type AudioProfileId = "original" | "podcast" | "social" | "broadcast";
+
+/** Final MP4 mux audio: embedded source track vs mono enhanced WAV timeline. */
+export type OutputAudioSourceId = "source_video" | "enhanced_wav";
+
+/** Which WAV Silero VAD analyzes before cut planning. */
+export type VadAudioSourceId =
+  | "extracted_audio"
+  | "enhanced_audio"
+  | "enhanced_audio_or_extracted";
+
 export interface EnabledFeatures {
   remove_dead_air?: boolean;
   enhance_audio?: boolean;
@@ -82,6 +95,14 @@ export interface JobStatusResponse {
   artifacts: Record<string, ArtifactEntry>;
   pipeline?: PipelineSummary;
   enabled_features?: EnabledFeatures;
+  /** Set when the client chose an audio preset at job creation. */
+  audio_profile?: AudioProfileId | null;
+  /** Snapshot of `service_config.audio_enhancement` for dashboards (pipelines with that step). */
+  audio_enhancement?: Record<string, unknown> | null;
+  /** From `service_config.render_plan_compiler.output_audio_source` when set. */
+  output_audio_source?: OutputAudioSourceId | null;
+  /** From `service_config.voice_activity_detection.audio_source` when set. */
+  vad_audio_source?: VadAudioSourceId | null;
   paths: JobPaths;
 }
 
@@ -97,10 +118,42 @@ export const STEP_ORDER_REFRAME_ONLY: StepName[] = [
   "ffmpeg_renderer",
 ];
 
+/** Reframe + extract/enhance audio for mux; no VAD or dead-air cuts (11 steps). */
+export const STEP_ORDER_SMOOTH_AUDIO: StepName[] = [
+  "validation",
+  "media_metadata",
+  "audio_extraction",
+  "audio_enhancement",
+  "proxy_frame_sampling",
+  "body_detection",
+  "track_interpolation",
+  "reframe_planning",
+  "easing_smoothing",
+  "render_plan_compiler",
+  "ffmpeg_renderer",
+];
+
 export const STEP_ORDER_DEAD_AIR: StepName[] = [
   "validation",
   "media_metadata",
   "audio_extraction",
+  "voice_activity_detection",
+  "dead_air_cut_planning",
+  "proxy_frame_sampling",
+  "body_detection",
+  "track_interpolation",
+  "reframe_planning",
+  "easing_smoothing",
+  "render_plan_compiler",
+  "ffmpeg_renderer",
+];
+
+/** Dead air + FFmpeg enhancement chain; no ASR / transcription step. */
+export const STEP_ORDER_DEAD_AIR_ENHANCED: StepName[] = [
+  "validation",
+  "media_metadata",
+  "audio_extraction",
+  "audio_enhancement",
   "voice_activity_detection",
   "dead_air_cut_planning",
   "proxy_frame_sampling",
@@ -129,10 +182,15 @@ export const STEP_ORDER_AUDIO_QUALITY: StepName[] = [
   "ffmpeg_renderer",
 ];
 
-/** Default preset: smooth vertical reframe only */
+/** Default preset: smooth vertical reframe only (9 steps, no audio enhancement). */
 export const PIPELINE_ID_REFRAME_ONLY: PipelineId = "reframe_16x9_to_9x16";
+/** Smooth reframe + audio extract/enhance for output mux (11 steps). */
+export const PIPELINE_ID_REFRAME_SMOOTH_AUDIO: PipelineId = "reframe_16x9_to_9x16_smooth_audio";
 /** Reframe + dead-air cutting (VAD + cut plan before vision). */
 export const PIPELINE_ID_REFRAME_DEAD_AIR: PipelineId = "reframe_16x9_to_9x16_dead_air";
+/** Reframe + dead air + audio enhancement (no transcription step). */
+export const PIPELINE_ID_REFRAME_DEAD_AIR_ENHANCED: PipelineId =
+  "reframe_16x9_to_9x16_dead_air_enhanced";
 /** Reframe + dead air + audio enhancement + ASR / filler cuts. */
 export const PIPELINE_ID_REFRAME_AUDIO_QUALITY: PipelineId = "reframe_16x9_to_9x16_audio_quality";
 
@@ -147,10 +205,21 @@ export function isTerminalStatus(status: OverallStatus): boolean {
 
 export const PIPELINE_IDS_WITH_DEAD_AIR: PipelineId[] = [
   PIPELINE_ID_REFRAME_DEAD_AIR,
+  PIPELINE_ID_REFRAME_DEAD_AIR_ENHANCED,
   PIPELINE_ID_REFRAME_AUDIO_QUALITY,
 ];
 
+/** Presets that run faster-whisper (transcription step). */
+export const PIPELINE_IDS_WITH_TRANSCRIPTION: PipelineId[] = [PIPELINE_ID_REFRAME_AUDIO_QUALITY];
+
 export const PIPELINE_IDS_WITH_AUDIO_QUALITY: PipelineId[] = [PIPELINE_ID_REFRAME_AUDIO_QUALITY];
+
+/** One row from ``vad_segments.json`` (Silero / VAD timeline). */
+export interface VadTimelineSegment {
+  start: number;
+  end: number;
+  type: "speech" | "silence";
+}
 
 export interface CutPlanSegment {
   source_start: number;

@@ -46,8 +46,8 @@ class DeadAirVadSegmentsTests(unittest.TestCase):
         for variant in VARIANTS:
             with self.subTest(variant=variant):
                 payload = _load(variant, "vad_segments.json")
-                self.assertEqual(payload["schema_version"], "2.0.0")
-                self.assertEqual(payload["model"], "energy")
+                self.assertEqual(payload["schema_version"], "3.0.0")
+                self.assertEqual(payload["model"], "silero_v5")
                 duration = float(payload["duration_seconds"])
                 segments = payload["segments"]
                 self.assertGreater(len(segments), 0)

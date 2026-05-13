@@ -85,10 +85,12 @@ class RenderPlanCompilerServiceTests(unittest.TestCase):
         payload = self.store.download_json(self.request.expected_outputs["render_plan"])
 
         self.assertEqual(response.outputs["render_plan"], self.request.expected_outputs["render_plan"])
-        self.assertEqual(payload["schema_version"], "1.0.0")
+        self.assertEqual(payload["schema_version"], "1.1.0")
         self.assertEqual(payload["crop_representation"], "keyframe_list")
         self.assertEqual(payload["source_video"]["object_key"], "jobs/job_test/input/source.mp4")
         self.assertEqual(payload["output"]["object_key"], "jobs/job_test/outputs/final_9x16.mp4")
+        self.assertEqual(payload["output_audio"]["source"], "source_video")
+        self.assertIsNone(payload["output_audio"]["object_key"])
         self.assertEqual(payload["metadata"]["fps"], 30.0)
         self.assertEqual(len(payload["crop_plan"]["keyframes"]), 2)
         self.assertEqual(payload["render_mode"], "smooth_crop")
@@ -188,6 +190,8 @@ class RenderPlanCompilerSmoothCropWithCutsTests(unittest.TestCase):
         self.assertEqual(second["source_start"], 6.0)
         self.assertEqual(second["source_end"], 12.0)
         self.assertEqual(payload["metadata"]["rendered_duration"], 9.0)
+        self.assertEqual(payload["output_audio"]["source"], "source_video")
+        self.assertIsNone(payload["output_audio"]["object_key"])
 
     def test_smooth_crop_with_cuts_keyframes_cover_segment_endpoints(self) -> None:
         self.service.run(build_context(self.request, self.store))
@@ -200,6 +204,29 @@ class RenderPlanCompilerSmoothCropWithCutsTests(unittest.TestCase):
             self.assertAlmostEqual(
                 kfs[-1]["t"], segment["source_end"] - segment["source_start"], places=6
             )
+
+    def test_output_audio_enhanced_wav_requires_enhanced_artifact(self) -> None:
+        bad_req = RunRequest(
+            job_id="job_test",
+            step_id="render_plan_compiler",
+            minio=RunMinIO(bucket="smart-cut", prefix="jobs/job_test/"),
+            inputs={
+                "job_manifest": "jobs/job_test/manifests/job_manifest.json",
+                "artifact_manifest": "jobs/job_test/manifests/artifact_manifest.json",
+            },
+            expected_outputs={
+                "render_plan": "jobs/job_test/artifacts/render_plan.json",
+            },
+            config={
+                "crop_representation": "keyframe_list",
+                "audio_policy": "aac_transcode",
+                "compiler_render_mode": "smooth_crop_with_cuts",
+                "output_audio_source": "enhanced_wav",
+            },
+        )
+        with self.assertRaises(ValueError) as ctx:
+            self.service.run(build_context(bad_req, self.store))
+        self.assertIn("enhanced_audio", str(ctx.exception))
 
     def test_smooth_crop_with_cuts_requires_cut_plan_artifact(self) -> None:
         self.store.upload_json(
@@ -216,6 +243,45 @@ class RenderPlanCompilerSmoothCropWithCutsTests(unittest.TestCase):
         with self.assertRaises(ValueError) as ctx:
             self.service.run(build_context(self.request, self.store))
         self.assertIn("cut_plan", str(ctx.exception))
+
+    def test_output_audio_enhanced_wav_embeds_object_key(self) -> None:
+        wav_key = "jobs/job_test/artifacts/enhanced_audio.wav"
+        self.store.upload_bytes(wav_key, b"RIFF" + b"\x00" * 200, content_type="audio/wav")
+        self.store.upload_json(
+            "jobs/job_test/manifests/artifact_manifest.json",
+            {
+                "artifacts": {
+                    "metadata": {"object_key": "jobs/job_test/artifacts/metadata.json"},
+                    "reframe_plan_smooth": {
+                        "object_key": "jobs/job_test/artifacts/reframe_plan_smooth.json"
+                    },
+                    "cut_plan": {"object_key": "jobs/job_test/artifacts/cut_plan.json"},
+                    "enhanced_audio": {"object_key": wav_key},
+                }
+            },
+        )
+        req = RunRequest(
+            job_id="job_test",
+            step_id="render_plan_compiler",
+            minio=RunMinIO(bucket="smart-cut", prefix="jobs/job_test/"),
+            inputs={
+                "job_manifest": "jobs/job_test/manifests/job_manifest.json",
+                "artifact_manifest": "jobs/job_test/manifests/artifact_manifest.json",
+            },
+            expected_outputs={
+                "render_plan": "jobs/job_test/artifacts/render_plan.json",
+            },
+            config={
+                "crop_representation": "keyframe_list",
+                "audio_policy": "aac_transcode",
+                "compiler_render_mode": "smooth_crop_with_cuts",
+                "output_audio_source": "enhanced_wav",
+            },
+        )
+        self.service.run(build_context(req, self.store))
+        payload = self.store.download_json(req.expected_outputs["render_plan"])
+        self.assertEqual(payload["output_audio"]["source"], "external_wav")
+        self.assertEqual(payload["output_audio"]["object_key"], wav_key)
 
 
 class RenderPlanCompilerFullFrameWithCutsTests(unittest.TestCase):
@@ -287,6 +353,7 @@ class RenderPlanCompilerFullFrameWithCutsTests(unittest.TestCase):
         self.assertEqual(payload["crop_plan"]["crop_width"], 1920)
         self.assertEqual(payload["crop_plan"]["crop_height"], 1080)
         self.assertEqual(len(payload["segments"]), 2)
+        self.assertEqual(payload["output_audio"]["source"], "source_video")
 
 
 if __name__ == "__main__":

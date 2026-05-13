@@ -57,7 +57,13 @@
                     "$ref": "#/$defs/stepsReframeOnly"
                 },
                 {
+                    "$ref": "#/$defs/stepsSmoothAudioChain"
+                },
+                {
                     "$ref": "#/$defs/stepsDeadAirChain"
+                },
+                {
+                    "$ref": "#/$defs/stepsDeadAirEnhancedChain"
                 },
                 {
                     "$ref": "#/$defs/stepsAudioQualityChain"
@@ -179,6 +185,58 @@
                 }
             }
         },
+        "stepsSmoothAudioChain": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "validation",
+                "media_metadata",
+                "audio_extraction",
+                "audio_enhancement",
+                "proxy_frame_sampling",
+                "body_detection",
+                "track_interpolation",
+                "reframe_planning",
+                "easing_smoothing",
+                "render_plan_compiler",
+                "ffmpeg_renderer"
+            ],
+            "properties": {
+                "validation": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "media_metadata": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "audio_extraction": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "audio_enhancement": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "proxy_frame_sampling": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "body_detection": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "track_interpolation": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "reframe_planning": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "easing_smoothing": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "render_plan_compiler": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "ffmpeg_renderer": {
+                    "$ref": "#/$defs/stepState"
+                }
+            }
+        },
         "stepsDeadAirChain": {
             "type": "object",
             "additionalProperties": false,
@@ -204,6 +262,66 @@
                     "$ref": "#/$defs/stepState"
                 },
                 "audio_extraction": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "voice_activity_detection": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "dead_air_cut_planning": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "proxy_frame_sampling": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "body_detection": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "track_interpolation": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "reframe_planning": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "easing_smoothing": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "render_plan_compiler": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "ffmpeg_renderer": {
+                    "$ref": "#/$defs/stepState"
+                }
+            }
+        },
+        "stepsDeadAirEnhancedChain": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "validation",
+                "media_metadata",
+                "audio_extraction",
+                "audio_enhancement",
+                "voice_activity_detection",
+                "dead_air_cut_planning",
+                "proxy_frame_sampling",
+                "body_detection",
+                "track_interpolation",
+                "reframe_planning",
+                "easing_smoothing",
+                "render_plan_compiler",
+                "ffmpeg_renderer"
+            ],
+            "properties": {
+                "validation": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "media_metadata": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "audio_extraction": {
+                    "$ref": "#/$defs/stepState"
+                },
+                "audio_enhancement": {
                     "$ref": "#/$defs/stepState"
                 },
                 "voice_activity_detection": {

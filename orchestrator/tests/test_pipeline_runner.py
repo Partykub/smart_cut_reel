@@ -9,7 +9,8 @@ import httpx
 from orchestrator.contracts import ARTIFACT_CONTENT_TYPES
 from orchestrator.contracts import ARTIFACT_PRODUCERS
 from orchestrator.contracts import PIPELINE_ID_REFRAME_DEAD_AIR
-from orchestrator.contracts import REFRAME_DEAD_AIR_STEP_IDS
+from orchestrator.contracts import PIPELINE_ID_REFRAME_DEAD_AIR_ENHANCED
+from orchestrator.contracts import REFRAME_DEAD_AIR_ENHANCED_STEP_IDS
 from orchestrator.contracts import PIPELINE_STEP_IDS
 from orchestrator.object_store import FilesystemObjectStore
 from orchestrator.pipeline_runner import HttpPipelineRunner
@@ -379,7 +380,8 @@ class HttpPipelineRunnerDeadAirPresetTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
 
-    def test_dead_air_runner_invokes_all_twelve_steps_in_order(self) -> None:
+    def test_dead_air_legacy_pipeline_id_runs_enhanced_thirteen_steps_in_order(self) -> None:
+        """``reframe_16x9_to_9x16_dead_air`` is coerced to the enhanced preset at job creation."""
         seen_steps: list[str] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -407,7 +409,7 @@ class HttpPipelineRunnerDeadAirPresetTests(unittest.TestCase):
         transport = httpx.MockTransport(handler)
         runner = HttpPipelineRunner(
             service_endpoints={
-                step_id: f"http://{step_id}.service" for step_id in REFRAME_DEAD_AIR_STEP_IDS
+                step_id: f"http://{step_id}.service" for step_id in REFRAME_DEAD_AIR_ENHANCED_STEP_IDS
             },
             minio_bucket="smart-cut",
             client_factory=lambda: httpx.Client(transport=transport),
@@ -425,13 +427,76 @@ class HttpPipelineRunnerDeadAirPresetTests(unittest.TestCase):
         expected_dead_air_artifacts = {
             artifact_key
             for artifact_key, producer in ARTIFACT_PRODUCERS.items()
-            if producer in REFRAME_DEAD_AIR_STEP_IDS
+            if producer in REFRAME_DEAD_AIR_ENHANCED_STEP_IDS
         }
-        self.assertEqual(seen_steps, list(REFRAME_DEAD_AIR_STEP_IDS))
+        self.assertEqual(seen_steps, list(REFRAME_DEAD_AIR_ENHANCED_STEP_IDS))
         self.assertEqual(result["service_status"]["status"], "success")
         self.assertEqual(set(result["artifacts"]), expected_dead_air_artifacts)
-        self.assertEqual(result["pipeline"]["pipeline_id"], PIPELINE_ID_REFRAME_DEAD_AIR)
-        self.assertEqual(result["enabled_features"], {"remove_dead_air": True})
+        self.assertEqual(result["pipeline"]["pipeline_id"], PIPELINE_ID_REFRAME_DEAD_AIR_ENHANCED)
+        self.assertEqual(
+            result["enabled_features"],
+            {"remove_dead_air": True, "enhance_audio": True},
+        )
+
+    def test_dead_air_enhanced_runner_invokes_all_thirteen_steps_in_order(self) -> None:
+        seen_steps: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content.decode("utf-8"))
+            step_id = payload["step_id"]
+            seen_steps.append(step_id)
+
+            for artifact_key, object_key in payload["expected_outputs"].items():
+                self.store.upload_bytes(
+                    object_key,
+                    f"{step_id}:{artifact_key}".encode("utf-8"),
+                    content_type=ARTIFACT_CONTENT_TYPES[artifact_key],
+                )
+
+            return httpx.Response(
+                200,
+                json={
+                    "service_id": step_id,
+                    "status": "success",
+                    "outputs": payload["expected_outputs"],
+                    "warnings": [],
+                },
+            )
+
+        transport = httpx.MockTransport(handler)
+        runner = HttpPipelineRunner(
+            service_endpoints={
+                step_id: f"http://{step_id}.service"
+                for step_id in REFRAME_DEAD_AIR_ENHANCED_STEP_IDS
+            },
+            minio_bucket="smart-cut",
+            client_factory=lambda: httpx.Client(transport=transport),
+        )
+        service = OrchestratorService(self.store, runner=runner)
+
+        created = service.create_job(
+            source_bytes=b"video-bytes",
+            original_filename="clip.mp4",
+            job_id="job_dead_air_enhanced_runner_success",
+            pipeline_id=PIPELINE_ID_REFRAME_DEAD_AIR_ENHANCED,
+        )
+        result = service.run_job(created["job_id"])
+
+        expected_artifacts = {
+            artifact_key
+            for artifact_key, producer in ARTIFACT_PRODUCERS.items()
+            if producer in REFRAME_DEAD_AIR_ENHANCED_STEP_IDS
+        }
+        self.assertEqual(seen_steps, list(REFRAME_DEAD_AIR_ENHANCED_STEP_IDS))
+        self.assertEqual(result["service_status"]["status"], "success")
+        self.assertEqual(set(result["artifacts"]), expected_artifacts)
+        self.assertEqual(
+            result["pipeline"]["pipeline_id"], PIPELINE_ID_REFRAME_DEAD_AIR_ENHANCED
+        )
+        self.assertEqual(
+            result["enabled_features"],
+            {"remove_dead_air": True, "enhance_audio": True},
+        )
 
     def test_dead_air_runner_passes_preset_service_config_through_to_each_step(self) -> None:
         observed_configs: dict[str, dict] = {}
@@ -460,7 +525,7 @@ class HttpPipelineRunnerDeadAirPresetTests(unittest.TestCase):
         transport = httpx.MockTransport(handler)
         runner = HttpPipelineRunner(
             service_endpoints={
-                step_id: f"http://{step_id}.service" for step_id in REFRAME_DEAD_AIR_STEP_IDS
+                step_id: f"http://{step_id}.service" for step_id in REFRAME_DEAD_AIR_ENHANCED_STEP_IDS
             },
             minio_bucket="smart-cut",
             client_factory=lambda: httpx.Client(transport=transport),
@@ -475,8 +540,10 @@ class HttpPipelineRunnerDeadAirPresetTests(unittest.TestCase):
         )
         service.run_job(created["job_id"])
 
+        self.assertIn("audio_enhancement", observed_configs)
+        self.assertEqual(observed_configs["audio_enhancement"]["denoise_model"], "off")
         self.assertIn("audio_extraction", observed_configs)
-        self.assertEqual(observed_configs["audio_extraction"]["sample_rate"], 16000)
+        self.assertEqual(observed_configs["audio_extraction"]["sample_rate"], 48000)
         self.assertEqual(
             observed_configs["voice_activity_detection"]["model"], "silero_v5"
         )

@@ -170,11 +170,151 @@ class OrchestratorApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["pipeline"]["pipeline_id"], "reframe_16x9_to_9x16_dead_air")
-        self.assertEqual(len(payload["pipeline"]["steps"]), 12)
-        self.assertEqual(payload["enabled_features"], {"remove_dead_air": True})
-        self.assertEqual(len(payload["service_status"]["steps"]), 12)
+        self.assertEqual(
+            payload["pipeline"]["pipeline_id"], "reframe_16x9_to_9x16_dead_air_enhanced"
+        )
+        self.assertEqual(len(payload["pipeline"]["steps"]), 13)
+        self.assertEqual(
+            payload["enabled_features"],
+            {"remove_dead_air": True, "enhance_audio": True},
+        )
+        self.assertEqual(len(payload["service_status"]["steps"]), 13)
         self.assertIn("audio_extraction", payload["service_status"]["steps"])
+
+    def test_create_job_audio_profile_social_merges_manifest(self) -> None:
+        response = self.client.post(
+            "/jobs",
+            files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
+            data={
+                "created_by": "debug_frontend",
+                "pipeline_id": "reframe_16x9_to_9x16_dead_air_enhanced",
+                "audio_profile": "social",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        job_id = payload["job_id"]
+        manifest = self.service.manifest_manager.read_job_manifest(job_id)
+        ae = manifest["service_config"]["audio_enhancement"]
+        self.assertEqual(ae["target_lufs"], -14.0)
+        self.assertEqual(ae["denoise_model"], "off")
+        self.assertEqual(ae["highpass_frequency_hz"], 0.0)
+        self.assertTrue(ae["loudness_normalization_enabled"])
+        self.assertEqual(manifest.get("audio_profile"), "social")
+        self.assertEqual(payload.get("audio_profile"), "social")
+        self.assertEqual(payload.get("audio_enhancement", {}).get("target_lufs"), -14.0)
+        self.assertEqual(
+            manifest["service_config"]["render_plan_compiler"]["output_audio_source"],
+            "enhanced_wav",
+        )
+        self.assertEqual(payload.get("output_audio_source"), "enhanced_wav")
+
+    def test_create_job_audio_profile_original_keeps_source_video_mux(self) -> None:
+        response = self.client.post(
+            "/jobs",
+            files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
+            data={
+                "created_by": "debug_frontend",
+                "pipeline_id": "reframe_16x9_to_9x16_dead_air_enhanced",
+                "audio_profile": "original",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        job_id = response.json()["job_id"]
+        manifest = self.service.manifest_manager.read_job_manifest(job_id)
+        self.assertEqual(
+            manifest["service_config"]["render_plan_compiler"]["output_audio_source"],
+            "source_video",
+        )
+        ae = manifest["service_config"]["audio_enhancement"]
+        self.assertFalse(ae["loudness_normalization_enabled"])
+        self.assertEqual(ae["denoise_model"], "off")
+        self.assertNotIn("target_lufs", ae)
+
+    def test_create_job_explicit_output_audio_source_overrides_profile_default(
+        self,
+    ) -> None:
+        response = self.client.post(
+            "/jobs",
+            files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
+            data={
+                "created_by": "debug_frontend",
+                "pipeline_id": "reframe_16x9_to_9x16_dead_air_enhanced",
+                "audio_profile": "social",
+                "output_audio_source": "source_video",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        job_id = response.json()["job_id"]
+        manifest = self.service.manifest_manager.read_job_manifest(job_id)
+        self.assertEqual(
+            manifest["service_config"]["render_plan_compiler"]["output_audio_source"],
+            "source_video",
+        )
+
+    def test_create_job_rejects_audio_profile_on_reframe_only(self) -> None:
+        response = self.client.post(
+            "/jobs",
+            files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
+            data={
+                "created_by": "debug_frontend",
+                "pipeline_id": "reframe_16x9_to_9x16",
+                "audio_profile": "podcast",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("audio_enhancement step", response.json()["detail"])
+
+    def test_create_job_rejects_invalid_audio_profile(self) -> None:
+        response = self.client.post(
+            "/jobs",
+            files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
+            data={
+                "created_by": "debug_frontend",
+                "pipeline_id": "reframe_16x9_to_9x16_dead_air_enhanced",
+                "audio_profile": "not_a_profile",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("audio_profile", response.json()["detail"])
+
+    def test_create_job_audio_enhancement_json_partial_merges(self) -> None:
+        response = self.client.post(
+            "/jobs",
+            files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
+            data={
+                "created_by": "debug_frontend",
+                "pipeline_id": "reframe_16x9_to_9x16_dead_air_enhanced",
+                "audio_enhancement": json.dumps({"denoise_model": "off"}),
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        job_id = response.json()["job_id"]
+        manifest = self.service.manifest_manager.read_job_manifest(job_id)
+        self.assertEqual(manifest["service_config"]["audio_enhancement"]["denoise_model"], "off")
+        self.assertIsNone(manifest.get("audio_profile"))
+
+    def test_create_job_dead_air_alias_forces_enhance_audio_even_if_disabled_in_form(
+        self,
+    ) -> None:
+        response = self.client.post(
+            "/jobs",
+            files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
+            data={
+                "created_by": "debug_frontend",
+                "pipeline_id": "reframe_16x9_to_9x16_dead_air",
+                "enabled_features": json.dumps({"remove_dead_air": True, "enhance_audio": False}),
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(
+            payload["pipeline"]["pipeline_id"], "reframe_16x9_to_9x16_dead_air_enhanced"
+        )
+        self.assertEqual(
+            payload["enabled_features"],
+            {"remove_dead_air": True, "enhance_audio": True},
+        )
 
     def test_create_job_rejects_unknown_pipeline_id(self) -> None:
         response = self.client.post(
@@ -242,7 +382,7 @@ class OrchestratorApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("enabled_features", response.json()["detail"])
 
-    def test_run_job_with_dead_air_preset_marks_all_twelve_steps_complete(self) -> None:
+    def test_run_job_with_dead_air_preset_marks_all_thirteen_steps_complete(self) -> None:
         created = self.client.post(
             "/jobs",
             files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
@@ -257,3 +397,64 @@ class OrchestratorApiTests(unittest.TestCase):
         self.assertEqual(response["service_status"]["status"], "success")
         terminal_statuses = {state["status"] for state in response["service_status"]["steps"].values()}
         self.assertEqual(terminal_statuses, {"success"})
+
+    def test_create_job_smooth_audio_pipeline_has_eleven_steps_and_audio_profile(self) -> None:
+        created = self.client.post(
+            "/jobs",
+            files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
+            data={
+                "created_by": "debug_frontend",
+                "pipeline_id": "reframe_16x9_to_9x16_smooth_audio",
+                "audio_profile": "social",
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        payload = created.json()
+        self.assertEqual(payload["pipeline"]["pipeline_id"], "reframe_16x9_to_9x16_smooth_audio")
+        self.assertEqual(len(payload["pipeline"]["steps"]), 11)
+        self.assertIn("audio_enhancement", payload["pipeline"]["steps"])
+        self.assertEqual(payload["audio_profile"], "social")
+        self.assertEqual(payload["output_audio_source"], "enhanced_wav")
+
+    def test_create_job_rejects_output_audio_enhanced_wav_without_enhancement_pipeline(self) -> None:
+        response = self.client.post(
+            "/jobs",
+            files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
+            data={
+                "created_by": "debug_frontend",
+                "pipeline_id": "reframe_16x9_to_9x16",
+                "output_audio_source": "enhanced_wav",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("audio_enhancement", response.json()["detail"])
+
+    def test_create_job_rejects_vad_audio_source_on_reframe_only(self) -> None:
+        response = self.client.post(
+            "/jobs",
+            files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
+            data={
+                "created_by": "debug_frontend",
+                "pipeline_id": "reframe_16x9_to_9x16",
+                "vad_audio_source": "extracted_audio",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("voice_activity_detection", response.json()["detail"])
+
+    def test_create_job_persists_output_and_vad_audio_routing(self) -> None:
+        created = self.client.post(
+            "/jobs",
+            files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
+            data={
+                "created_by": "debug_frontend",
+                "pipeline_id": "reframe_16x9_to_9x16_dead_air_enhanced",
+                "output_audio_source": "enhanced_wav",
+                "vad_audio_source": "extracted_audio",
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        job_id = created.json()["job_id"]
+        status = self.client.get(f"/jobs/{job_id}/status").json()
+        self.assertEqual(status["output_audio_source"], "enhanced_wav")
+        self.assertEqual(status["vad_audio_source"], "extracted_audio")

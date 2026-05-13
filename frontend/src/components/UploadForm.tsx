@@ -4,80 +4,62 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
 
 import { createJob } from "@/lib/api";
+import { PRESET_INFO, SOUND_OUTPUT_STYLE_OPTIONS, type PresetInfo } from "@/lib/uploadPresets";
 import {
   PIPELINE_ID_REFRAME_AUDIO_QUALITY,
-  PIPELINE_ID_REFRAME_DEAD_AIR,
-  PIPELINE_ID_REFRAME_ONLY,
+  PIPELINE_ID_REFRAME_DEAD_AIR_ENHANCED,
+  PIPELINE_ID_REFRAME_SMOOTH_AUDIO,
+  type AudioProfileId,
   type PipelineId,
 } from "@/lib/types";
 
 type ToggleState = {
   removeDeadAir: boolean;
-  enhanceAudio: boolean;
   removeFillerWords: boolean;
 };
 
-type PresetInfo = {
-  label: string;
-  accent: "emerald" | "violet" | "amber";
-  steps: number;
-  summary: string;
-  bullets: string[];
-};
-
-const PRESET_INFO: Record<PipelineId, PresetInfo> = {
-  "reframe_16x9_to_9x16": {
-    label: "Smooth vertical reframe",
-    accent: "emerald",
-    steps: 9,
-    summary:
-      "Vision-only pipeline: sample frames, detect subject, plan crop, smooth motion, render one 9:16 MP4.",
-    bullets: [
-      "No audio extraction or silence cuts",
-      "Best when your timeline is already tight",
-    ],
-  },
-  "reframe_16x9_to_9x16_dead_air": {
-    label: "Reframe + dead air",
-    accent: "violet",
-    steps: 12,
-    summary:
-      "Adds an audio chain before vision: WAV extract → voice activity detection → cut plan, then the same reframe/render path with trims.",
-    bullets: [
-      "Trims long silent stretches (configurable in the orchestrator)",
-      "Requires dead-air chain when enhancing audio or cutting fillers",
-    ],
-  },
-  "reframe_16x9_to_9x16_audio_quality": {
-    label: "Full audio-quality chain",
-    accent: "amber",
-    steps: 14,
-    summary:
-      "Dead-air base plus enhancement (denoise / loudness), Silero VAD on enhanced audio, transcription, and optional filler-word removal from the cut plan.",
-    bullets: [
-      "Longer runs — includes ASR when removing fillers",
-      "Best for noisy rooms and verbal clutter",
-    ],
-  },
-};
-
 function selectPipelineId(state: ToggleState): PipelineId {
-  if (state.enhanceAudio || state.removeFillerWords) {
+  if (state.removeFillerWords) {
     return PIPELINE_ID_REFRAME_AUDIO_QUALITY;
   }
   if (state.removeDeadAir) {
-    return PIPELINE_ID_REFRAME_DEAD_AIR;
+    return PIPELINE_ID_REFRAME_DEAD_AIR_ENHANCED;
   }
-  return PIPELINE_ID_REFRAME_ONLY;
+  return PIPELINE_ID_REFRAME_SMOOTH_AUDIO;
 }
 
 function buildEnabledFeatures(state: ToggleState): Record<string, boolean> {
   const features: Record<string, boolean> = {
     remove_dead_air: state.removeDeadAir,
   };
-  if (state.enhanceAudio) features.enhance_audio = true;
-  if (state.removeFillerWords) features.remove_filler_words = true;
+  if (state.removeDeadAir) {
+    features.enhance_audio = true;
+  }
+  if (state.removeFillerWords) {
+    features.remove_filler_words = true;
+    features.enhance_audio = true;
+  }
+  if (!state.removeDeadAir && !state.removeFillerWords) {
+    features.enhance_audio = true;
+  }
   return features;
+}
+
+/** Partial `audio_enhancement` override for denoise vs profile defaults */
+function buildDenoisePartial(
+  profile: AudioProfileId,
+  reduceNoise: boolean,
+): Record<string, string> | null {
+  if (profile === "original") {
+    if (reduceNoise) {
+      return { denoise_model: "std" };
+    }
+    return null;
+  }
+  if (reduceNoise) {
+    return null;
+  }
+  return { denoise_model: "off" };
 }
 
 const ACCENT_RING: Record<PresetInfo["accent"], string> = {
@@ -96,17 +78,17 @@ export function UploadForm() {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [removeDeadAir, setRemoveDeadAir] = useState(true);
-  const [enhanceAudio, setEnhanceAudio] = useState(false);
   const [removeFillerWords, setRemoveFillerWords] = useState(false);
+  const [audioProfile, setAudioProfile] = useState<AudioProfileId>("original");
+  const [reduceNoise, setReduceNoise] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const requiresDeadAir = enhanceAudio || removeFillerWords;
+  const requiresDeadAir = removeFillerWords;
   const effectiveRemoveDeadAir = requiresDeadAir ? true : removeDeadAir;
 
   const toggleState: ToggleState = {
     removeDeadAir: effectiveRemoveDeadAir,
-    enhanceAudio,
     removeFillerWords,
   };
 
@@ -114,12 +96,16 @@ export function UploadForm() {
   const enabledFeatures = buildEnabledFeatures(toggleState);
   const preset = PRESET_INFO[pipelineId];
 
+  const pickSoundStyle = (value: AudioProfileId) => {
+    setAudioProfile(value);
+  };
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
 
     if (!file) {
-      setError("Choose a video file first.");
+      setError("Please choose a video file first");
       return;
     }
 
@@ -130,13 +116,20 @@ export function UploadForm() {
         formData.append("created_by", "debug_frontend");
         formData.append("pipeline_id", pipelineId);
         formData.append("enabled_features", JSON.stringify(enabledFeatures));
+        formData.append("audio_profile", audioProfile);
+        const denoisePartial = buildDenoisePartial(audioProfile, reduceNoise);
+        if (denoisePartial) {
+          formData.append("audio_enhancement", JSON.stringify(denoisePartial));
+        }
         const result = await createJob(formData);
         router.push(`/jobs/${result.job_id}`);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not create job.");
+        setError(err instanceof Error ? err.message : "Could not create job");
       }
     });
   };
+
+  const denoisePartial = buildDenoisePartial(audioProfile, reduceNoise);
 
   return (
     <form
@@ -148,8 +141,9 @@ export function UploadForm() {
           Upload & options
         </h2>
         <p className="text-sm text-zinc-500">
-          Select a 16:9 source file, tune cuts and audio below, then start — you&apos;ll land on the
-          job dashboard with live steps and artifacts.
+          Pick a 16:9 file, then set <strong>MP4 loudness</strong> below — the default path here
+          still extracts and processes audio for mux (no silence trim). Silence trim / filler
+          removal are further down.
         </p>
       </div>
 
@@ -198,7 +192,69 @@ export function UploadForm() {
 
       <fieldset className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-950/35 p-5">
         <legend className="px-1 font-display text-sm font-semibold text-zinc-200">
-          Video & audio cuts
+          MP4 loudness & audio
+        </legend>
+        {!effectiveRemoveDeadAir ? (
+          <p className="rounded-md border border-emerald-900/30 bg-emerald-950/15 px-3 py-2 text-xs leading-relaxed text-emerald-100/90">
+            <span className="font-medium text-emerald-50">Vertical reframe + output audio:</span> pick
+            a style below — we extract audio, run loudness processing for that preset, then mux.
+            <span className="font-medium"> Source (embedded)</span> keeps the video’s original track
+            in the MP4. When you enable <strong>Trim long silence</strong>, the same loudness
+            settings feed the silence-analysis chain.
+          </p>
+        ) : (
+          <p className="text-xs text-zinc-500">
+            Audio is extracted from the source, processed with your chosen style, analyzed for
+            silence, then muxed into the MP4 per preset.
+          </p>
+        )}
+        <div className="space-y-2">
+          {SOUND_OUTPUT_STYLE_OPTIONS.map((opt) => (
+            <label
+              key={opt.value}
+              className={`flex cursor-pointer gap-3 rounded-lg border px-3 py-2.5 text-sm transition ${
+                audioProfile === opt.value
+                  ? "border-emerald-500/50 bg-emerald-950/20 text-zinc-100"
+                  : "border-zinc-800/80 bg-zinc-950/40 text-zinc-400 hover:border-zinc-700"
+              }`}
+            >
+              <input
+                type="radio"
+                name="audio_profile"
+                value={opt.value}
+                checked={audioProfile === opt.value}
+                onChange={() => pickSoundStyle(opt.value)}
+                disabled={isPending}
+                className="mt-1 border-zinc-600 bg-zinc-900 text-emerald-500 focus:ring-emerald-500"
+              />
+              <span>
+                <span className="font-medium text-zinc-200">{opt.label}</span>
+                <span className="mt-0.5 block text-xs text-zinc-500">{opt.hint}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+
+        <div className="border-t border-zinc-800/80 pt-4">
+          <ToggleRow
+            accentClassName="text-sky-400 focus:ring-sky-500"
+            checked={reduceNoise}
+            disabled={isPending}
+            onChange={(value) => setReduceNoise(value)}
+            title="Noise reduction"
+            subtitle="Independent of the loudness style above — toggles an FFT denoise override on the enhancement step."
+            hint={
+              audioProfile === "original" && reduceNoise
+                ? "Source mode skips denoise by default — enabling adds standard denoise on the audio chain (turn off if it sounds muffled)."
+                : undefined
+            }
+          />
+        </div>
+      </fieldset>
+
+      <fieldset className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-950/35 p-5">
+        <legend className="px-1 font-display text-sm font-semibold text-zinc-200">
+          Video & silence
         </legend>
 
         <ToggleRow
@@ -206,22 +262,13 @@ export function UploadForm() {
           checked={effectiveRemoveDeadAir}
           disabled={isPending || requiresDeadAir}
           onChange={(value) => setRemoveDeadAir(value)}
-          title="Remove dead air (silence)"
-          subtitle="Extract audio, run Silero VAD, build a cut plan, then trim long silent gaps before reframing. Turns off only when neither enhancement nor filler-word removal is selected."
+          title="Trim long silence"
+          subtitle="Remove long silent stretches before the vertical reframe — when on, the MP4 loudness section above applies before VAD / cut planning."
           hint={
             requiresDeadAir
-              ? "Forced on — audio enhancement and filler cuts require this chain."
+              ? "Forced on — filler-word removal requires this path."
               : undefined
           }
-        />
-
-        <ToggleRow
-          accentClassName="text-violet-400 focus:ring-violet-500"
-          checked={enhanceAudio}
-          disabled={isPending}
-          onChange={(value) => setEnhanceAudio(value)}
-          title="Enhance audio"
-          subtitle="High-pass, light denoise, and EBU R128-style loudness normalization before VAD / ASR — helps noisy rooms and uneven levels."
         />
 
         <ToggleRow
@@ -229,14 +276,14 @@ export function UploadForm() {
           checked={removeFillerWords}
           disabled={isPending}
           onChange={(value) => setRemoveFillerWords(value)}
-          title="Remove filler words"
-          subtitle="faster-whisper with word timestamps; cuts common fillers (Thai + English). Adds noticeable CPU time per clip."
+          title="Remove filler words (ASR + cuts)"
+          subtitle="Word-level transcription with filler detection (Thai + English) merged into the cut plan — CPU-heavy per clip."
         />
       </fieldset>
 
       <details className="rounded-lg border border-zinc-800/80 bg-zinc-950/25 px-4 py-3 text-xs text-zinc-500">
         <summary className="cursor-pointer select-none font-medium text-zinc-400">
-          Technical · API payload (debug)
+          Debug · API payload preview
         </summary>
         <dl className="mt-3 space-y-2 font-mono text-[11px] leading-relaxed">
           <div>
@@ -246,6 +293,16 @@ export function UploadForm() {
           <div>
             <dt className="text-zinc-600">enabled_features</dt>
             <dd className="break-all text-zinc-400">{JSON.stringify(enabledFeatures)}</dd>
+          </div>
+          <div>
+            <dt className="text-zinc-600">audio_profile</dt>
+            <dd className="break-all text-zinc-400">{audioProfile}</dd>
+          </div>
+          <div>
+            <dt className="text-zinc-600">audio_enhancement (partial)</dt>
+            <dd className="break-all text-zinc-400">
+              {denoisePartial ? JSON.stringify(denoisePartial) : "(not sent)"}
+            </dd>
           </div>
         </dl>
       </details>

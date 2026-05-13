@@ -14,6 +14,7 @@ from unittest.mock import patch
 from orchestrator.object_store import FilesystemObjectStore
 from services.audio_enhancement.service import AudioEnhancementService
 from services.audio_enhancement.service import _FfmpegFilterError
+from services.audio_enhancement.service import _build_filter_chain
 from services.common.runtime import RunMinIO
 from services.common.runtime import RunRequest
 from services.common.runtime import build_context
@@ -94,6 +95,42 @@ class AudioEnhancementServiceTests(unittest.TestCase):
             self.store.download_bytes(self.enhanced_key),
             self.store.download_bytes(self.extracted_key),
         )
+
+    def test_bypass_copies_without_ffmpeg_when_all_processing_off(self) -> None:
+        service = AudioEnhancementService()
+        with patch("services.audio_enhancement.service._run_ffmpeg_chain") as mock_ffmpeg:
+            response = service.run(
+                build_context(
+                    self._build_request(
+                        config={
+                            "highpass_frequency_hz": 0,
+                            "denoise_model": "off",
+                            "loudness_normalization_enabled": False,
+                        }
+                    ),
+                    self.store,
+                )
+            )
+        mock_ffmpeg.assert_not_called()
+        self.assertEqual(
+            self.store.download_bytes(self.enhanced_key),
+            self.store.download_bytes(self.extracted_key),
+        )
+        self.assertEqual(response.metrics["loudness_normalization_enabled"], False)
+        self.assertIsNone(response.metrics["input_lufs"])
+
+    def test_build_filter_chain_skips_loudnorm_when_disabled(self) -> None:
+        cfg = {
+            "highpass_frequency_hz": 80.0,
+            "denoise_model": "off",
+            "loudness_normalization_enabled": False,
+            "target_lufs": -16.0,
+            "true_peak_db": -1.5,
+            "loudness_range": 11.0,
+        }
+        chain = _build_filter_chain(cfg)
+        self.assertIn("highpass", chain)
+        self.assertNotIn("loudnorm", chain)
 
     def test_rejects_invalid_denoise_model(self) -> None:
         service = AudioEnhancementService()

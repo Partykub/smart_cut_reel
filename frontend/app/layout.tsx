@@ -9,7 +9,7 @@ const fontDisplay = Syne({
 });
 
 const fontBody = IBM_Plex_Sans({
-  subsets: ["latin"],
+  subsets: ["latin", "latin-ext"],
   weight: ["400", "500", "600"],
   variable: "--font-body",
 });
@@ -17,7 +17,7 @@ const fontBody = IBM_Plex_Sans({
 export const metadata: Metadata = {
   title: "Smart Cut Reel",
   description:
-    "Turn 16:9 footage into polished 9:16 vertical video — smart reframing plus optional silence trims, audio cleanup, and filler-word cuts.",
+    "Turn 16:9 footage into smooth 9:16 vertical video — optional long-silence trimming (with audio prep before VAD) and optional filler-word cuts.",
 };
 
 export default function RootLayout({

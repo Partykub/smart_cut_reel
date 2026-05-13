@@ -7,6 +7,8 @@ from pathlib import Path
 from .object_store import FilesystemObjectStore
 from .service import OrchestratorService
 
+from .audio_profile import coerce_audio_enhancement_partial
+
 
 def create_app(service: OrchestratorService | None = None):
     try:
@@ -33,8 +35,26 @@ def create_app(service: OrchestratorService | None = None):
         created_by: str = Form("debug_frontend"),
         pipeline_id: str = Form("reframe_16x9_to_9x16"),
         enabled_features: str | None = Form(None),
+        audio_profile: str | None = Form(None),
+        audio_enhancement: str | None = Form(None),
+        output_audio_source: str | None = Form(None),
+        vad_audio_source: str | None = Form(None),
     ) -> dict:
         feature_overrides = _parse_enabled_features(enabled_features)
+        profile = _parse_audio_profile(audio_profile)
+        enhancement_partial = _parse_audio_enhancement_json(audio_enhancement)
+        out_audio = _parse_optional_enum_field(
+            output_audio_source,
+            field="output_audio_source",
+            allowed=frozenset({"source_video", "enhanced_wav"}),
+        )
+        vad_audio = _parse_optional_enum_field(
+            vad_audio_source,
+            field="vad_audio_source",
+            allowed=frozenset(
+                {"extracted_audio", "enhanced_audio", "enhanced_audio_or_extracted"}
+            ),
+        )
         source_bytes = await source.read()
         try:
             # Disk writes for large uploads can be tens of MB; off-load to a
@@ -47,6 +67,10 @@ def create_app(service: OrchestratorService | None = None):
                 created_by=created_by,
                 pipeline_id=pipeline_id,
                 enabled_features=feature_overrides,
+                audio_profile=profile,
+                audio_enhancement_partial=enhancement_partial,
+                output_audio_source=out_audio,
+                vad_audio_source=vad_audio,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -99,8 +123,8 @@ def _parse_enabled_features(raw: str | None) -> dict[str, bool] | None:
     """Parse the optional ``enabled_features`` form field.
 
     The frontend sends this as a JSON object (e.g.
-    ``{"remove_dead_air": true, "enhance_audio": false}``) so users can flip
-    individual feature toggles independently of the pipeline_id template.
+    ``{"remove_dead_air": true, "enhance_audio": true}`` for the default
+    dead-air upload path) so flags can override the pipeline template.
     Empty / null values mean "use template defaults" — no override.
     """
     if raw is None:
@@ -135,3 +159,75 @@ def _parse_enabled_features(raw: str | None) -> dict[str, bool] | None:
             )
         coerced[key] = bool(value)
     return coerced
+
+
+def _parse_optional_enum_field(
+    raw: str | None,
+    *,
+    field: str,
+    allowed: frozenset[str],
+) -> str | None:
+    if raw is None:
+        return None
+    text = raw.strip().lower()
+    if not text:
+        return None
+    from fastapi import HTTPException
+
+    if text not in allowed:
+        opts = ", ".join(sorted(allowed))
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid {field} '{raw}'. Expected one of: {opts}.",
+        )
+    return text
+
+
+def _parse_audio_profile(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    text = raw.strip().lower()
+    if not text:
+        return None
+    from fastapi import HTTPException
+
+    from .audio_profile import KNOWN_AUDIO_PROFILE_IDS
+
+    if text not in KNOWN_AUDIO_PROFILE_IDS:
+        allowed = ", ".join(sorted(KNOWN_AUDIO_PROFILE_IDS))
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid audio_profile '{raw}'. Expected one of: {allowed}.",
+        )
+    return text
+
+
+def _parse_audio_enhancement_json(raw: str | None) -> dict[str, object] | None:
+    if raw is None:
+        return None
+    text = raw.strip()
+    if not text:
+        return None
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=400,
+            detail=f"audio_enhancement must be a JSON object: {exc.msg}",
+        ) from exc
+    if not isinstance(parsed, dict):
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=400,
+            detail="audio_enhancement must be a JSON object.",
+        )
+    try:
+        coerced = coerce_audio_enhancement_partial(parsed)
+    except ValueError as exc:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return coerced or None

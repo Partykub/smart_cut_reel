@@ -1,5 +1,5 @@
 {
-    "schema_version": "2.0.0",
+    "schema_version": "3.0.0",
     "job_id": "job_001",
     "created_at": "2026-05-08T10:00:00Z",
     "created_by": "orchestrator",
@@ -22,11 +22,12 @@
         "object_key": "jobs/job_001/outputs/final_9x16.mp4"
     },
     "pipeline": {
-        "pipeline_id": "reframe_16x9_to_9x16_dead_air",
+        "pipeline_id": "reframe_16x9_to_9x16_dead_air_enhanced",
         "steps": [
             "validation",
             "media_metadata",
             "audio_extraction",
+            "audio_enhancement",
             "voice_activity_detection",
             "dead_air_cut_planning",
             "proxy_frame_sampling",
@@ -39,16 +40,25 @@
         ]
     },
     "enabled_features": {
-        "remove_dead_air": true
+        "remove_dead_air": true,
+        "enhance_audio": true
     },
     "service_config": {
         "audio_extraction": {
             "sample_rate": 48000,
             "channels": 1
         },
+        "audio_enhancement": {
+            "denoise_model": "off",
+            "target_lufs": -16.0,
+            "true_peak_db": -1.5,
+            "loudness_range": 11.0,
+            "highpass_frequency_hz": 0,
+            "loudness_normalization_enabled": true
+        },
         "voice_activity_detection": {
             "model": "silero_v5",
-            "audio_source": "extracted_audio",
+            "audio_source": "enhanced_audio_or_extracted",
             "speech_threshold": 0.5,
             "min_speech_duration_seconds": 0.25,
             "min_silence_duration_seconds": 0.2,

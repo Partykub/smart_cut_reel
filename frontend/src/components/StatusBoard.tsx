@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  PIPELINE_ID_REFRAME_SMOOTH_AUDIO,
   STEP_ORDER_REFRAME_ONLY,
+  STEP_ORDER_SMOOTH_AUDIO,
   type PipelineSummary,
   type ServiceStatus,
   type StepName,
@@ -24,7 +26,8 @@ const DEAD_AIR_CHAIN_STEPS = new Set<StepName>([
   "dead_air_cut_planning",
 ]);
 
-const AUDIO_QUALITY_CHAIN_STEPS = new Set<StepName>(["audio_enhancement", "transcription"]);
+const ENHANCEMENT_BADGE_STEPS = new Set<StepName>(["audio_enhancement"]);
+const TRANSCRIPTION_BADGE_STEPS = new Set<StepName>(["transcription"]);
 
 const DEFAULT_STEP_STATE: StepState = {
   status: "pending",
@@ -36,9 +39,9 @@ const STEP_LABEL: Record<StepName, string> = {
   validation: "Validate input",
   media_metadata: "Inspect media",
   audio_extraction: "Extract audio (for VAD / cuts)",
-  audio_enhancement: "Enhance audio",
+  audio_enhancement: "Prep audio for VAD (analysis)",
   voice_activity_detection: "VAD — speech vs silence",
-  transcription: "Transcribe (filler words)",
+  transcription: "Transcribe (ASR — filler words)",
   dead_air_cut_planning: "Dead air — build keep/cut plan",
   proxy_frame_sampling: "Sample frames",
   body_detection: "Detect people",
@@ -66,8 +69,15 @@ export function StatusBoard({
   refreshError: string | null;
   isTriggeringRun: boolean;
 }) {
-  const steps =
-    pipeline?.steps && pipeline.steps.length > 0 ? pipeline.steps : STEP_ORDER_REFRAME_ONLY;
+  const steps = useMemo((): StepName[] => {
+    if (pipeline?.steps && pipeline.steps.length > 0) {
+      return pipeline.steps as StepName[];
+    }
+    if (pipeline?.pipeline_id === PIPELINE_ID_REFRAME_SMOOTH_AUDIO) {
+      return STEP_ORDER_SMOOTH_AUDIO;
+    }
+    return STEP_ORDER_REFRAME_ONLY;
+  }, [pipeline?.pipeline_id, pipeline?.steps]);
 
   const [now, setNow] = useState(() => Date.now());
 
@@ -255,7 +265,8 @@ export function StatusBoard({
           const state = status.steps[step] ?? DEFAULT_STEP_STATE;
           const isCurrent = status.current_step === step;
           const isDeadAirChainStep = DEAD_AIR_CHAIN_STEPS.has(step);
-          const isAudioQualityChainStep = AUDIO_QUALITY_CHAIN_STEPS.has(step);
+          const isEnhancementBadgeStep = ENHANCEMENT_BADGE_STEPS.has(step);
+          const isTranscriptionBadgeStep = TRANSCRIPTION_BADGE_STEPS.has(step);
           return (
             <li
               key={step}
@@ -273,9 +284,14 @@ export function StatusBoard({
                         audio
                       </span>
                     ) : null}
-                    {isAudioQualityChainStep ? (
+                    {isEnhancementBadgeStep ? (
                       <span className="rounded-full border border-amber-800 bg-amber-950/40 px-1.5 py-0 text-[10px] font-medium uppercase tracking-wider text-amber-200">
-                        quality
+                        enhance
+                      </span>
+                    ) : null}
+                    {isTranscriptionBadgeStep ? (
+                      <span className="rounded-full border border-sky-800 bg-sky-950/40 px-1.5 py-0 text-[10px] font-medium uppercase tracking-wider text-sky-200">
+                        ASR
                       </span>
                     ) : null}
                   </div>

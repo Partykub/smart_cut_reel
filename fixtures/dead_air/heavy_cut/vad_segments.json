@@ -1,20 +1,23 @@
 {
-    "schema_version": "2.0.0",
+    "schema_version": "3.0.0",
     "job_id": "job_dead_air_heavy_cut",
-    "model": "energy",
+    "model": "silero_v5",
     "audio_object_key": "fixtures/dead_air/heavy_cut/extracted_audio.wav",
     "sample_rate": 16000,
     "channels": 1,
     "duration_seconds": 60.0,
-    "frame_duration_seconds": 0.03,
-    "energy_threshold_db": -35.0,
+    "speech_threshold": 0.5,
+    "min_speech_duration_seconds": 0.25,
+    "min_silence_duration_seconds": 0.2,
+    "speech_pad_seconds": 0.05,
+    "silero_sample_rate": 16000,
     "segments": [
-        {"type": "speech", "start": 0.0, "end": 6.0, "energy_db_avg": -22.5},
-        {"type": "silence", "start": 6.0, "end": 18.0, "energy_db_avg": -52.0},
-        {"type": "speech", "start": 18.0, "end": 26.0, "energy_db_avg": -21.8},
-        {"type": "silence", "start": 26.0, "end": 38.0, "energy_db_avg": -55.4},
-        {"type": "speech", "start": 38.0, "end": 44.0, "energy_db_avg": -23.1},
-        {"type": "silence", "start": 44.0, "end": 60.0, "energy_db_avg": -56.9}
+        {"type": "speech", "start": 0.0, "end": 6.0, "confidence": 0.95},
+        {"type": "silence", "start": 6.0, "end": 18.0, "confidence": 0.95},
+        {"type": "speech", "start": 18.0, "end": 26.0, "confidence": 0.95},
+        {"type": "silence", "start": 26.0, "end": 38.0, "confidence": 0.95},
+        {"type": "speech", "start": 38.0, "end": 44.0, "confidence": 0.95},
+        {"type": "silence", "start": 44.0, "end": 60.0, "confidence": 0.95}
     ],
     "metrics": {
         "total_speech_seconds": 20.0,

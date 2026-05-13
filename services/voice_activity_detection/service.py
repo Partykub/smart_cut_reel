@@ -4,30 +4,25 @@ Reads ``extracted_audio.wav`` (PCM 16-bit, mono or stereo) — or the
 ``enhanced_audio.wav`` produced by the Phase 3 audio enhancement step when
 present — and segments the timeline into ``speech`` / ``silence`` ranges.
 
-Two backends are supported:
+Only **Silero VAD v5 (ONNX)** is supported:
 
-* ``energy`` — frame-by-frame RMS detector (Phase 2 baseline). No external
-  dependencies; deterministic; reasonable on clean studio audio.
-* ``silero_v5`` (canonical) / ``silero_v4`` (alias) — Silero VAD v5 (ONNX).
-  Wraps the official ``silero-vad`` package which ships the model weights
-  and an ``onnxruntime`` inference graph. Significantly more accurate on
-  noisy / reverberant audio while staying CPU-friendly. Model is loaded
-  lazily in-process and cached. ``silero_v4`` is kept as an alias for
-  backward compatibility with Phase 3.0 manifests; it dispatches to the
-  same v5 model.
+* ``silero_v5`` (canonical) — Silero VAD via the official ``silero-vad`` package
+  (bundled ONNX weights + ``onnxruntime``). Model is loaded lazily in-process
+  and cached.
+* ``silero_v4`` — backward-compat alias for older manifests; dispatches to the
+  same v5 inference path and records ``silero_v4`` in the artifact ``model``
+  field when requested.
 
-Both backends emit the same ``segments`` shape so downstream services
-(``dead_air_cut_planning``, frontend) do not need to know which backend ran.
+Downstream services (``dead_air_cut_planning``, frontend) only rely on the
+``segments`` shape, not the model id.
 """
 
 from __future__ import annotations
 
 import io
-import math
 import struct
 import threading
 import wave
-from dataclasses import dataclass
 from typing import Any
 
 from services.common.runtime import RunResponse
@@ -37,29 +32,16 @@ from services.common.runtime import ServiceWarning
 
 VAD_SCHEMA_VERSION = "3.0.0"
 
-_SUPPORTED_MODELS = frozenset({"energy", "silero_v4", "silero_v5"})
+_SUPPORTED_MODELS = frozenset({"silero_v4", "silero_v5"})
 
-_SILERO_MODEL_ALIASES = frozenset({"silero_v4", "silero_v5"})
 _VALID_AUDIO_SOURCES = frozenset(
     {"extracted_audio", "enhanced_audio", "enhanced_audio_or_extracted"}
 )
 
-_ENERGY_FLOOR_DB = -90.0
 _SILERO_TARGET_SAMPLE_RATES = (16000, 8000)
 
 _silero_lock = threading.Lock()
 _silero_cache: dict[str, Any] = {}
-
-
-@dataclass(frozen=True)
-class VadFrame:
-    start: float
-    end: float
-    energy_db: float
-
-    @property
-    def duration(self) -> float:
-        return self.end - self.start
 
 
 class VoiceActivityDetectionService:
@@ -87,24 +69,15 @@ class VoiceActivityDetectionService:
         audio_bytes = context.read_bytes(audio_key)
 
         warnings: list[ServiceWarning] = []
-        sample_rate, channels, samples, duration_seconds = _read_wav(audio_bytes)
+        sample_rate, channels, _, duration_seconds = _read_wav(audio_bytes)
         if duration_seconds <= 0:
             raise ValueError("audio source has zero duration")
 
-        if backend == "energy":
-            segments, backend_extras = self._run_energy_backend(
-                samples=samples,
-                sample_rate=sample_rate,
-                channels=channels,
-                duration_seconds=duration_seconds,
-                config=config,
-            )
-        else:
-            segments, backend_extras = self._run_silero_backend(
-                audio_bytes=audio_bytes,
-                duration_seconds=duration_seconds,
-                config=config,
-            )
+        segments, backend_extras = self._run_silero_backend(
+            audio_bytes=audio_bytes,
+            duration_seconds=duration_seconds,
+            config=config,
+        )
 
         speech_total = sum(seg["end"] - seg["start"] for seg in segments if seg["type"] == "speech")
         silence_total = sum(seg["end"] - seg["start"] for seg in segments if seg["type"] == "silence")
@@ -194,52 +167,14 @@ class VoiceActivityDetectionService:
 
     def _config(self, context: ServiceContext) -> dict[str, Any]:
         defaults: dict[str, Any] = {
-            "model": "energy",
+            "model": "silero_v5",
             "audio_source": "enhanced_audio_or_extracted",
-            "energy_threshold_db": -35.0,
             "speech_threshold": 0.5,
             "min_speech_duration_seconds": 0.25,
             "min_silence_duration_seconds": 0.2,
             "speech_pad_seconds": 0.05,
-            "frame_duration_seconds": 0.03,
         }
-        defaults.update(context.request.config)
-        return defaults
-
-    def _run_energy_backend(
-        self,
-        *,
-        samples: list[int],
-        sample_rate: int,
-        channels: int,
-        duration_seconds: float,
-        config: dict[str, Any],
-    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-        frame_duration = float(config["frame_duration_seconds"])
-        if frame_duration <= 0:
-            raise ValueError("frame_duration_seconds must be greater than zero")
-
-        frames = _frames_with_energy(
-            samples,
-            sample_rate=sample_rate,
-            channels=channels,
-            frame_duration_seconds=frame_duration,
-        )
-        if not frames:
-            raise ValueError("voice activity detection produced no frames")
-
-        segments = _segments_from_frames(
-            frames=frames,
-            energy_threshold_db=float(config["energy_threshold_db"]),
-            min_speech_duration_seconds=float(config["min_speech_duration_seconds"]),
-            min_silence_duration_seconds=float(config["min_silence_duration_seconds"]),
-            duration_seconds=duration_seconds,
-        )
-        extras = {
-            "frame_duration_seconds": round(frame_duration, 6),
-            "energy_threshold_db": float(config["energy_threshold_db"]),
-        }
-        return segments, extras
+        return {**defaults, **context.request.config}
 
     def _run_silero_backend(
         self,
@@ -282,8 +217,7 @@ def _read_wav(audio_bytes: bytes) -> tuple[int, int, list[int], float]:
     """Decode a PCM 16-bit WAV into per-sample integers.
 
     Returns ``(sample_rate, channels, samples, duration_seconds)``. ``samples``
-    is interleaved if the stream is stereo; the energy frame builder downmixes
-    to mono before computing RMS.
+    is interleaved if the stream is stereo (mono mean used when loading for Silero).
     """
     with io.BytesIO(audio_bytes) as buffer:
         with wave.open(buffer, "rb") as wav_in:
@@ -302,145 +236,6 @@ def _read_wav(audio_bytes: bytes) -> tuple[int, int, list[int], float]:
     samples: list[int] = list(struct.unpack(f"<{total_samples}h", raw)) if total_samples else []
     duration_seconds = (n_frames / float(sample_rate)) if sample_rate > 0 else 0.0
     return sample_rate, channels, samples, duration_seconds
-
-
-def _frames_with_energy(
-    samples: list[int],
-    *,
-    sample_rate: int,
-    channels: int,
-    frame_duration_seconds: float,
-) -> list[VadFrame]:
-    if sample_rate <= 0 or channels <= 0:
-        raise ValueError("sample_rate and channels must be positive")
-
-    samples_per_frame = max(1, int(round(sample_rate * frame_duration_seconds)))
-    total_mono_samples = len(samples) // channels
-    if total_mono_samples == 0:
-        return []
-
-    frames: list[VadFrame] = []
-    for start_index in range(0, total_mono_samples, samples_per_frame):
-        end_index = min(start_index + samples_per_frame, total_mono_samples)
-        if end_index == start_index:
-            break
-
-        sum_squares = 0.0
-        n = 0
-        for sample_idx in range(start_index, end_index):
-            base = sample_idx * channels
-            mono_value = sum(samples[base : base + channels]) / channels
-            normalized = mono_value / 32768.0
-            sum_squares += normalized * normalized
-            n += 1
-        if n == 0:
-            energy_db = _ENERGY_FLOOR_DB
-        else:
-            rms = math.sqrt(sum_squares / n)
-            energy_db = 20.0 * math.log10(rms) if rms > 1e-9 else _ENERGY_FLOOR_DB
-
-        frame_start = start_index / sample_rate
-        frame_end = end_index / sample_rate
-        frames.append(VadFrame(start=frame_start, end=frame_end, energy_db=energy_db))
-
-    return frames
-
-
-def _segments_from_frames(
-    *,
-    frames: list[VadFrame],
-    energy_threshold_db: float,
-    min_speech_duration_seconds: float,
-    min_silence_duration_seconds: float,
-    duration_seconds: float,
-) -> list[dict[str, Any]]:
-    if not frames:
-        return [
-            {
-                "start": 0.0,
-                "end": duration_seconds,
-                "type": "silence",
-                "confidence": 1.0,
-            }
-        ]
-
-    raw: list[dict[str, Any]] = []
-    for frame in frames:
-        seg_type = "speech" if frame.energy_db >= energy_threshold_db else "silence"
-        confidence = _frame_confidence(frame.energy_db, energy_threshold_db, seg_type)
-        raw.append(
-            {
-                "start": round(frame.start, 6),
-                "end": round(frame.end, 6),
-                "type": seg_type,
-                "confidence": confidence,
-                "_energy_db": frame.energy_db,
-            }
-        )
-
-    merged = _merge_runs(raw)
-    pruned_short_speech = _absorb_short_runs(
-        merged, target_type="speech", min_duration=min_speech_duration_seconds
-    )
-    pruned_short_silence = _absorb_short_runs(
-        pruned_short_speech, target_type="silence", min_duration=min_silence_duration_seconds
-    )
-
-    cleaned: list[dict[str, Any]] = []
-    for segment in pruned_short_silence:
-        cleaned.append(
-            {
-                "start": round(float(segment["start"]), 6),
-                "end": round(float(segment["end"]), 6),
-                "type": segment["type"],
-                "confidence": round(float(segment["confidence"]), 4),
-            }
-        )
-
-    if cleaned:
-        cleaned[-1]["end"] = round(duration_seconds, 6)
-
-    return cleaned
-
-
-def _frame_confidence(energy_db: float, threshold_db: float, seg_type: str) -> float:
-    margin = energy_db - threshold_db
-    if seg_type == "speech":
-        scaled = max(0.0, min(1.0, 0.5 + margin / 20.0))
-    else:
-        scaled = max(0.0, min(1.0, 0.5 - margin / 20.0))
-    return round(scaled, 4)
-
-
-def _merge_runs(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    merged: list[dict[str, Any]] = []
-    for segment in segments:
-        if merged and merged[-1]["type"] == segment["type"]:
-            merged[-1]["end"] = segment["end"]
-            merged[-1]["confidence"] = max(merged[-1]["confidence"], segment["confidence"])
-        else:
-            merged.append(dict(segment))
-    return merged
-
-
-def _absorb_short_runs(
-    segments: list[dict[str, Any]],
-    *,
-    target_type: str,
-    min_duration: float,
-) -> list[dict[str, Any]]:
-    if min_duration <= 0 or not segments:
-        return segments
-
-    flipped: list[dict[str, Any]] = []
-    for segment in segments:
-        duration = float(segment["end"]) - float(segment["start"])
-        if segment["type"] == target_type and duration < min_duration:
-            opposite_type = "silence" if target_type == "speech" else "speech"
-            flipped.append({**segment, "type": opposite_type})
-        else:
-            flipped.append(dict(segment))
-    return _merge_runs(flipped)
 
 
 def _load_silero_model() -> Any:
@@ -468,8 +263,7 @@ def warmup_silero_model() -> tuple[bool, str | None]:
     """Trigger one-shot Silero VAD model load on service startup.
 
     Returns ``(ok, error_message)`` so a failed warmup degrades gracefully
-    (the energy backend stays usable; the first silero ``/run`` simply pays
-    the load cost itself).
+    (the first successful ``/run`` will load the model if warmup failed).
     """
     try:
         _load_silero_model()
