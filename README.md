@@ -99,6 +99,22 @@ python3 -m venv .venv
 ./scripts/start_local_stack.sh
 ```
 
+Windows PowerShell:
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\pip install -r requirements.txt
+.\scripts\start_local_stack.ps1
+```
+
+Windows Command Prompt:
+
+```bat
+py -3 -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+scripts\start_local_stack.cmd
+```
+
 This starts every microservice (Phase 1 ports `8010–8018` + Phase 2 ports `8019–8021` + Phase 3 ports `8022–8023`) and the orchestrator on **`http://127.0.0.1:8000`**, using `SMART_CUT_OBJECT_STORE_ROOT` (default: `.orchestrator-data/` under the repo). Press **Ctrl+C** to stop every process.
 
 If you want to avoid the first Phase 3 job stalling on model download, prefetch the transcription model before running jobs:
@@ -115,7 +131,18 @@ export TRANSCRIPTION_WARMUP_COMPUTE_TYPE=int8
 ./scripts/start_local_stack.sh --prefetch-transcription-model
 ```
 
+On Windows, use the same startup flag via PowerShell or the `.cmd` wrapper:
+
+```powershell
+.\scripts\start_local_stack.ps1 -PrefetchTranscriptionModel
+```
+
+```bat
+scripts\start_local_stack.cmd -PrefetchTranscriptionModel
+```
+
 Notes:
+
 - First-time `medium` downloads are significantly larger/slower than `small`.
 - Setting `HF_TOKEN` can improve HuggingFace Hub download reliability/speed.
 
@@ -139,6 +166,18 @@ Background mode:
 ```bash
 ./scripts/start_local_stack.sh --detach
 ./scripts/stop_local_stack.sh
+```
+
+Windows background mode:
+
+```powershell
+.\scripts\start_local_stack.ps1 -Detach
+.\scripts\stop_local_stack.ps1
+```
+
+```bat
+scripts\start_local_stack.cmd -Detach
+scripts\stop_local_stack.cmd
 ```
 
 Then start the debug UI (separate terminal):
