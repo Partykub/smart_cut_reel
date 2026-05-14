@@ -51,6 +51,9 @@ class ReframePlanningService:
             stable_zone_release_ratio=float(config["stable_zone_release_ratio"]),
             stable_zone_offset_ratio=float(config["stable_zone_offset_ratio"]),
             stable_hold_seconds=float(config["stable_hold_seconds"]),
+            lookahead_switch_confirmation_frames=int(
+                config["lookahead_switch_confirmation_frames"]
+            ),
         )
 
         payload = {
@@ -69,6 +72,9 @@ class ReframePlanningService:
             "stable_zone_release_ratio": float(config["stable_zone_release_ratio"]),
             "stable_zone_offset_ratio": float(config["stable_zone_offset_ratio"]),
             "stable_hold_seconds": float(config["stable_hold_seconds"]),
+            "lookahead_switch_confirmation_frames": int(
+                config["lookahead_switch_confirmation_frames"]
+            ),
             "keyframes": keyframes,
         }
 
@@ -94,6 +100,7 @@ class ReframePlanningService:
             "stable_zone_release_ratio": 0.05,
             "stable_zone_offset_ratio": 0.35,
             "stable_hold_seconds": 0.75,
+            "lookahead_switch_confirmation_frames": 0,
         }
         defaults.update(context.request.config)
         return defaults
@@ -116,6 +123,7 @@ def build_reframe_keyframes(
     stable_zone_release_ratio: float,
     stable_zone_offset_ratio: float,
     stable_hold_seconds: float,
+    lookahead_switch_confirmation_frames: int,
 ) -> list[dict[str, Any]]:
     del framing_mode
     del face_hint_strength
@@ -131,14 +139,23 @@ def build_reframe_keyframes(
     max_y = max(0, source_height - crop_height)
     last_anchor_center_x: float | None = None
 
-    for track in tracks:
+    for index, track in enumerate(tracks):
         raw_center_x = _face_anchor_center_x(track)
         if last_anchor_center_x is None:
             center_x = raw_center_x
         elif abs(raw_center_x - last_anchor_center_x) <= max(0.0, face_hint_dead_zone_px):
             center_x = last_anchor_center_x
-        else:
+        elif _should_confirm_anchor_switch(
+            tracks=tracks,
+            current_index=index,
+            previous_anchor_center_x=last_anchor_center_x,
+            candidate_center_x=raw_center_x,
+            face_hint_dead_zone_px=face_hint_dead_zone_px,
+            lookahead_switch_confirmation_frames=lookahead_switch_confirmation_frames,
+        ):
             center_x = raw_center_x
+        else:
+            center_x = last_anchor_center_x
         last_anchor_center_x = center_x
         target_x = center_x - (crop_width / 2.0)
         if clamp_to_source:
@@ -165,6 +182,56 @@ def build_reframe_keyframes(
         )
 
     return keyframes
+
+
+def _should_confirm_anchor_switch(
+    *,
+    tracks: list[dict[str, Any]],
+    current_index: int,
+    previous_anchor_center_x: float,
+    candidate_center_x: float,
+    face_hint_dead_zone_px: float,
+    lookahead_switch_confirmation_frames: int,
+) -> bool:
+    if lookahead_switch_confirmation_frames <= 0:
+        return True
+
+    confirmation_window = tracks[
+        current_index : current_index + lookahead_switch_confirmation_frames + 1
+    ]
+    if not confirmation_window:
+        return True
+
+    candidate_window_tolerance_px = max(64.0, face_hint_dead_zone_px * 2.0)
+    for future_track in confirmation_window:
+        if not _track_supports_anchor_switch(
+            track=future_track,
+            previous_anchor_center_x=previous_anchor_center_x,
+            candidate_center_x=candidate_center_x,
+            face_hint_dead_zone_px=face_hint_dead_zone_px,
+            candidate_window_tolerance_px=candidate_window_tolerance_px,
+        ):
+            return False
+
+    return True
+
+
+def _track_supports_anchor_switch(
+    *,
+    track: dict[str, Any],
+    previous_anchor_center_x: float,
+    candidate_center_x: float,
+    face_hint_dead_zone_px: float,
+    candidate_window_tolerance_px: float,
+) -> bool:
+    if bool(track.get("missing")) or bool(track.get("interpolated")):
+        return False
+
+    raw_center_x = _face_anchor_center_x(track)
+    if abs(raw_center_x - previous_anchor_center_x) <= max(0.0, face_hint_dead_zone_px):
+        return False
+
+    return abs(raw_center_x - candidate_center_x) <= candidate_window_tolerance_px
 
 
 def _face_anchor_center_x(track: dict[str, Any]) -> float:

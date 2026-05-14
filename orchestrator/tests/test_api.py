@@ -403,9 +403,11 @@ class OrchestratorApiTests(unittest.TestCase):
         payload = response.json()
         manifest = self.service.manifest_manager.read_job_manifest(payload["job_id"])
         body_detection_config = manifest["service_config"]["body_detection"]
+        reframe_planning_config = manifest["service_config"]["reframe_planning"]
         self.assertEqual(body_detection_config["face_detector_backend"], "retinaface")
         self.assertEqual(body_detection_config["face_min_confidence"], 0.6)
         self.assertEqual(body_detection_config["model_path"], "yolov8m.pt")
+        self.assertEqual(reframe_planning_config["lookahead_switch_confirmation_frames"], 4)
 
     def test_create_job_rejects_invalid_service_config_json(self) -> None:
         response = self.client.post(

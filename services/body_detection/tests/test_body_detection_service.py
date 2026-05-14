@@ -175,6 +175,11 @@ class BodyDetectionServiceTests(unittest.TestCase):
         )
 
         class FakeCapture:
+            def get(self, prop: int) -> float:
+                if prop == fake_cv2.CAP_PROP_FPS:
+                    return 60.0
+                return 0.0
+
             def set(self, *_args) -> bool:
                 return True
 
@@ -183,12 +188,15 @@ class BodyDetectionServiceTests(unittest.TestCase):
 
         fake_cv2 = Mock()
         fake_cv2.CAP_PROP_POS_MSEC = 0
+        fake_cv2.CAP_PROP_POS_FRAMES = 1
+        fake_cv2.CAP_PROP_FPS = 2
 
         detections_by_frame, sources_by_frame, debug_boxes_by_frame = self.service._run_detection_pass(
             cv2=fake_cv2,
             capture=FakeCapture(),
             yolo_model=Mock(),
             frames=[{"index": 0, "t": 0.0}],
+            sample_fps=60.0,
             proxy_width=960,
             proxy_height=540,
             source_width=1920,
@@ -218,3 +226,117 @@ class BodyDetectionServiceTests(unittest.TestCase):
             debug_boxes_by_frame[0]["face"],
             DetectionCandidate(x=240.0, y=160.0, w=120.0, h=140.0, confidence=0.99),
         )
+
+    @patch.object(BodyDetectionService, "_detect_face_in_body_candidate")
+    @patch.object(BodyDetectionService, "_detect_people_in_frame")
+    def test_run_detection_pass_seeks_by_frame_when_proxy_fps_available(
+        self,
+        mock_detect_people_in_frame,
+        mock_detect_face_in_body_candidate,
+    ) -> None:
+        mock_detect_people_in_frame.return_value = [
+            DetectionCandidate(x=100.0, y=50.0, w=200.0, h=300.0, confidence=0.95)
+        ]
+        mock_detect_face_in_body_candidate.return_value = None
+
+        class FakeCapture:
+            def __init__(self) -> None:
+                self.set_calls: list[tuple[int, float]] = []
+
+            def get(self, prop: int) -> float:
+                if prop == fake_cv2.CAP_PROP_FPS:
+                    return 59.992998
+                return 0.0
+
+            def set(self, prop: int, value: float) -> bool:
+                self.set_calls.append((prop, value))
+                return True
+
+            def read(self) -> tuple[bool, object]:
+                return True, object()
+
+        fake_cv2 = Mock()
+        fake_cv2.CAP_PROP_POS_MSEC = 0
+        fake_cv2.CAP_PROP_POS_FRAMES = 1
+        fake_cv2.CAP_PROP_FPS = 2
+        capture = FakeCapture()
+
+        self.service._run_detection_pass(
+            cv2=fake_cv2,
+            capture=capture,
+            yolo_model=Mock(),
+            frames=[{"index": 788, "t": 13.134866}],
+            sample_fps=59.992998,
+            proxy_width=960,
+            proxy_height=540,
+            source_width=1920,
+            source_height=1080,
+            min_confidence=0.9,
+            face_detector_backend="retinaface",
+            face_min_confidence=0.6,
+            face_recognition_model="hog",
+            subject_selection_strategy="highest_confidence",
+            image_size=640,
+            person_class_id=0,
+            device="cpu",
+            warnings=[],
+            warning_codes=set(),
+        )
+
+        self.assertEqual(capture.set_calls[0], (fake_cv2.CAP_PROP_POS_FRAMES, 788))
+
+    @patch.object(BodyDetectionService, "_detect_face_in_body_candidate")
+    @patch.object(BodyDetectionService, "_detect_people_in_frame")
+    def test_run_detection_pass_falls_back_to_timestamp_seek_when_proxy_fps_unavailable(
+        self,
+        mock_detect_people_in_frame,
+        mock_detect_face_in_body_candidate,
+    ) -> None:
+        mock_detect_people_in_frame.return_value = [
+            DetectionCandidate(x=100.0, y=50.0, w=200.0, h=300.0, confidence=0.95)
+        ]
+        mock_detect_face_in_body_candidate.return_value = None
+
+        class FakeCapture:
+            def __init__(self) -> None:
+                self.set_calls: list[tuple[int, float]] = []
+
+            def get(self, _prop: int) -> float:
+                return 0.0
+
+            def set(self, prop: int, value: float) -> bool:
+                self.set_calls.append((prop, value))
+                return True
+
+            def read(self) -> tuple[bool, object]:
+                return True, object()
+
+        fake_cv2 = Mock()
+        fake_cv2.CAP_PROP_POS_MSEC = 0
+        fake_cv2.CAP_PROP_POS_FRAMES = 1
+        fake_cv2.CAP_PROP_FPS = 2
+        capture = FakeCapture()
+
+        self.service._run_detection_pass(
+            cv2=fake_cv2,
+            capture=capture,
+            yolo_model=Mock(),
+            frames=[{"index": 788, "t": 13.134866}],
+            sample_fps=0.0,
+            proxy_width=960,
+            proxy_height=540,
+            source_width=1920,
+            source_height=1080,
+            min_confidence=0.9,
+            face_detector_backend="retinaface",
+            face_min_confidence=0.6,
+            face_recognition_model="hog",
+            subject_selection_strategy="highest_confidence",
+            image_size=640,
+            person_class_id=0,
+            device="cpu",
+            warnings=[],
+            warning_codes=set(),
+        )
+
+        self.assertEqual(capture.set_calls[0], (fake_cv2.CAP_PROP_POS_MSEC, 13134.866))

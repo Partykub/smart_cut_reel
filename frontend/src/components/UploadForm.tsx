@@ -20,6 +20,8 @@ type ToggleState = {
 
 type FaceDetectorBackend = "retinaface" | "face_recognition";
 
+const LOOKAHEAD_SWITCH_CONFIRMATION_FRAMES = 4;
+
 function selectPipelineId(state: ToggleState): PipelineId {
   if (state.removeFillerWords) {
     return PIPELINE_ID_REFRAME_AUDIO_QUALITY;
@@ -72,6 +74,7 @@ function buildServiceConfig(faceDetectorBackend: FaceDetectorBackend): Record<st
     reframe_planning: {
       framing_mode: "center_subject",
       face_hint_dead_zone_px: 48,
+      lookahead_switch_confirmation_frames: LOOKAHEAD_SWITCH_CONFIRMATION_FRAMES,
     },
   };
 }
@@ -230,8 +233,8 @@ export function UploadForm() {
             <label
               key={opt.value}
               className={`flex cursor-pointer gap-3 rounded-lg border px-3 py-2.5 text-sm transition ${audioProfile === opt.value
-                  ? "border-emerald-500/50 bg-emerald-950/20 text-zinc-100"
-                  : "border-zinc-800/80 bg-zinc-950/40 text-zinc-400 hover:border-zinc-700"
+                ? "border-emerald-500/50 bg-emerald-950/20 text-zinc-100"
+                : "border-zinc-800/80 bg-zinc-950/40 text-zinc-400 hover:border-zinc-700"
                 }`}
             >
               <input

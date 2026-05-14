@@ -638,6 +638,24 @@ class FFmpegRendererTrackLookupTests(unittest.TestCase):
         self.assertIsNotNone(selected)
         self.assertEqual(selected["frame_index"], 790)
 
+    def test_overlay_prefers_frame_index_lookup_when_available(self) -> None:
+        service = FFmpegRendererService()
+        tracks = [
+            {"frame_index": 10, "t": 0.30, "bbox": {"x": 10}},
+            {"frame_index": 20, "t": 0.60, "bbox": {"x": 20}},
+        ]
+
+        selected = service._track_for_frame(
+            tracks,
+            track_frames=[10, 20],
+            track_times=[0.30, 0.60],
+            frame_index=20,
+            t=0.58,
+        )
+
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected["frame_index"], 20)
+
 
 class FFmpegRendererOverlaySpecTests(unittest.TestCase):
     def test_overlay_render_spec_downscales_and_caps_fps(self) -> None:
@@ -653,6 +671,20 @@ class FFmpegRendererOverlaySpecTests(unittest.TestCase):
         self.assertEqual((width, height), (960, 540))
         self.assertEqual(fps, 15.0)
         self.assertEqual(stride, 2)
+
+    def test_overlay_render_spec_keeps_full_resolution_and_fps_without_caps(self) -> None:
+        width, height, fps, stride = _overlay_render_spec(
+            frame_width=1920,
+            frame_height=1080,
+            fps=59.94,
+            max_width=0,
+            max_height=0,
+            fps_cap=0.0,
+        )
+
+        self.assertEqual((width, height), (1920, 1080))
+        self.assertEqual(fps, 59.94)
+        self.assertEqual(stride, 1)
 
 
 if __name__ == "__main__":

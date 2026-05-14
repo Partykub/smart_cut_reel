@@ -149,3 +149,144 @@ class ReframePlanningServiceTests(unittest.TestCase):
         self.assertEqual(payload["keyframes"][1]["anchor_center_x"], 878.0)
         self.assertEqual(payload["keyframes"][1]["center_x"], 870.0)
         self.assertEqual(payload["keyframes"][1]["x"], 566.0)
+
+    def test_requires_future_persistence_before_switching_subject(self) -> None:
+        self.request.config = {
+            "framing_mode": "center_subject",
+            "lookahead_switch_confirmation_frames": 2,
+        }
+        self.store.upload_json(
+            "jobs/job_test/artifacts/body_tracks_interpolated.json",
+            {
+                "tracks": [
+                    {
+                        "frame_index": 0,
+                        "t": 0.0,
+                        "center": {"x": 870.0, "y": 350.0},
+                        "confidence": 0.92,
+                        "source": "retinaface_detector",
+                    },
+                    {
+                        "frame_index": 1,
+                        "t": 0.2,
+                        "center": {"x": 1220.0, "y": 350.0},
+                        "confidence": 0.92,
+                        "source": "retinaface_detector",
+                    },
+                    {
+                        "frame_index": 2,
+                        "t": 0.4,
+                        "center": {"x": 874.0, "y": 350.0},
+                        "confidence": 0.92,
+                        "source": "retinaface_detector",
+                    },
+                    {
+                        "frame_index": 3,
+                        "t": 0.6,
+                        "center": {"x": 876.0, "y": 350.0},
+                        "confidence": 0.92,
+                        "source": "retinaface_detector",
+                    },
+                ]
+            },
+        )
+
+        self.service.run(build_context(self.request, self.store))
+        payload = self.store.download_json(self.request.expected_outputs["reframe_plan_raw"])
+
+        self.assertEqual(payload["lookahead_switch_confirmation_frames"], 2)
+        self.assertEqual(payload["keyframes"][0]["center_x"], 870.0)
+        self.assertEqual(payload["keyframes"][1]["anchor_center_x"], 1220.0)
+        self.assertEqual(payload["keyframes"][1]["center_x"], 870.0)
+        self.assertEqual(payload["keyframes"][2]["center_x"], 870.0)
+        self.assertEqual(payload["keyframes"][3]["center_x"], 870.0)
+
+    def test_switches_when_future_frames_confirm_new_subject(self) -> None:
+        self.request.config = {
+            "framing_mode": "center_subject",
+            "lookahead_switch_confirmation_frames": 2,
+        }
+        self.store.upload_json(
+            "jobs/job_test/artifacts/body_tracks_interpolated.json",
+            {
+                "tracks": [
+                    {
+                        "frame_index": 0,
+                        "t": 0.0,
+                        "center": {"x": 870.0, "y": 350.0},
+                        "confidence": 0.92,
+                        "source": "retinaface_detector",
+                    },
+                    {
+                        "frame_index": 1,
+                        "t": 0.2,
+                        "center": {"x": 1220.0, "y": 350.0},
+                        "confidence": 0.92,
+                        "source": "retinaface_detector",
+                    },
+                    {
+                        "frame_index": 2,
+                        "t": 0.4,
+                        "center": {"x": 1212.0, "y": 350.0},
+                        "confidence": 0.92,
+                        "source": "retinaface_detector",
+                    },
+                    {
+                        "frame_index": 3,
+                        "t": 0.6,
+                        "center": {"x": 1206.0, "y": 350.0},
+                        "confidence": 0.92,
+                        "source": "retinaface_detector",
+                    },
+                ]
+            },
+        )
+
+        self.service.run(build_context(self.request, self.store))
+        payload = self.store.download_json(self.request.expected_outputs["reframe_plan_raw"])
+
+        self.assertEqual(payload["keyframes"][0]["center_x"], 870.0)
+        self.assertEqual(payload["keyframes"][1]["center_x"], 1220.0)
+        self.assertEqual(payload["keyframes"][2]["center_x"], 1220.0)
+        self.assertEqual(payload["keyframes"][3]["center_x"], 1220.0)
+
+    def test_zero_confirmation_frames_preserves_immediate_switching(self) -> None:
+        self.request.config = {
+            "framing_mode": "center_subject",
+            "lookahead_switch_confirmation_frames": 0,
+        }
+        self.store.upload_json(
+            "jobs/job_test/artifacts/body_tracks_interpolated.json",
+            {
+                "tracks": [
+                    {
+                        "frame_index": 0,
+                        "t": 0.0,
+                        "center": {"x": 870.0, "y": 350.0},
+                        "confidence": 0.92,
+                        "source": "retinaface_detector",
+                    },
+                    {
+                        "frame_index": 1,
+                        "t": 0.2,
+                        "center": {"x": 1220.0, "y": 350.0},
+                        "confidence": 0.92,
+                        "source": "retinaface_detector",
+                    },
+                    {
+                        "frame_index": 2,
+                        "t": 0.4,
+                        "center": {"x": 874.0, "y": 350.0},
+                        "confidence": 0.92,
+                        "source": "retinaface_detector",
+                    },
+                ]
+            },
+        )
+
+        self.service.run(build_context(self.request, self.store))
+        payload = self.store.download_json(self.request.expected_outputs["reframe_plan_raw"])
+
+        self.assertEqual(payload["keyframes"][0]["center_x"], 870.0)
+        self.assertEqual(payload["keyframes"][1]["center_x"], 1220.0)
+        self.assertEqual(payload["keyframes"][2]["center_x"], 874.0)

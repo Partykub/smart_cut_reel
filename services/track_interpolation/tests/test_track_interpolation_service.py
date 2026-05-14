@@ -141,6 +141,83 @@ class TrackInterpolationServiceTests(unittest.TestCase):
         warning_codes = [warning.code for warning in response.warnings]
         self.assertNotIn("TRACK_INTERPOLATION_OUTLIERS_ADJUSTED", warning_codes)
 
+    def test_keeps_confirmed_transition_on_high_fps_video(self) -> None:
+        self.store.upload_json(
+            "jobs/job_test/artifacts/body_tracks_raw.json",
+            {
+                "coordinate_space": "source",
+                "source_resolution": {"width": 1920, "height": 1080},
+                "tracks": [
+                    {
+                        "frame_index": 254,
+                        "t": 4.233827,
+                        "bbox": {"x": 1345.3, "y": 346.83, "w": 395.86, "h": 507.71},
+                        "body_bbox": {"x": 1345.3, "y": 346.83, "w": 395.86, "h": 507.71},
+                        "face_bbox": {"x": 1522.0, "y": 370.0, "w": 90.0, "h": 122.0},
+                        "center": {"x": 1567.0, "y": 431.0},
+                        "confidence": 0.9998,
+                        "missing": False,
+                        "source": "retinaface_detector",
+                    },
+                    {
+                        "frame_index": 255,
+                        "t": 4.250496,
+                        "bbox": {"x": 1345.32, "y": 347.02, "w": 396.41, "h": 507.7},
+                        "body_bbox": {"x": 1345.32, "y": 347.02, "w": 396.41, "h": 507.7},
+                        "face_bbox": {"x": 1520.0, "y": 370.0, "w": 92.0, "h": 122.0},
+                        "center": {"x": 1566.0, "y": 431.0},
+                        "confidence": 0.9998,
+                        "missing": False,
+                        "source": "retinaface_detector",
+                    },
+                    {
+                        "frame_index": 256,
+                        "t": 4.267165,
+                        "bbox": {"x": 376.99, "y": 47.22, "w": 744.29, "h": 926.54},
+                        "body_bbox": {"x": 376.99, "y": 47.22, "w": 744.29, "h": 926.54},
+                        "face_bbox": {"x": 684.0, "y": 102.0, "w": 190.0, "h": 258.0},
+                        "center": {"x": 779.0, "y": 231.0},
+                        "confidence": 0.9997,
+                        "missing": False,
+                        "source": "retinaface_detector",
+                    },
+                    {
+                        "frame_index": 257,
+                        "t": 4.283833,
+                        "bbox": {"x": 373.17, "y": 47.97, "w": 747.62, "h": 925.41},
+                        "body_bbox": {"x": 373.17, "y": 47.97, "w": 747.62, "h": 925.41},
+                        "face_bbox": {"x": 676.0, "y": 110.0, "w": 188.0, "h": 258.0},
+                        "center": {"x": 770.0, "y": 239.0},
+                        "confidence": 0.9997,
+                        "missing": False,
+                        "source": "retinaface_detector",
+                    },
+                    {
+                        "frame_index": 258,
+                        "t": 4.300502,
+                        "bbox": {"x": 370.0, "y": 52.0, "w": 748.0, "h": 924.0},
+                        "body_bbox": {"x": 370.0, "y": 52.0, "w": 748.0, "h": 924.0},
+                        "face_bbox": {"x": 671.0, "y": 115.0, "w": 188.0, "h": 258.0},
+                        "center": {"x": 765.0, "y": 244.0},
+                        "confidence": 0.9997,
+                        "missing": False,
+                        "source": "retinaface_detector",
+                    },
+                ],
+            },
+        )
+        self.request.config = {"max_center_jump_per_second": 600.0}
+
+        response = self.service.run(build_context(self.request, self.store))
+        payload = self.store.download_json(self.request.expected_outputs["body_tracks_interpolated"])
+
+        self.assertEqual(payload["tracks"][2]["center"], {"x": 779.0, "y": 231.0})
+        self.assertEqual(payload["tracks"][2].get("source"), "retinaface_detector")
+        self.assertEqual(payload["tracks"][3]["center"], {"x": 770.0, "y": 239.0})
+        self.assertEqual(payload["tracks"][3].get("source"), "retinaface_detector")
+        warning_codes = [warning.code for warning in response.warnings]
+        self.assertNotIn("TRACK_INTERPOLATION_OUTLIERS_ADJUSTED", warning_codes)
+
     def test_interpolates_body_and_face_debug_boxes_when_present(self) -> None:
         self.store.upload_json(
             "jobs/job_test/artifacts/body_tracks_raw.json",

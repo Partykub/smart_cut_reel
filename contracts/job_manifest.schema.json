@@ -306,6 +306,10 @@
                             "type": "number",
                             "minimum": 0
                         },
+                        "lookahead_switch_confirmation_frames": {
+                            "type": "integer",
+                            "minimum": 0
+                        },
                         "face_hint_smoothing_strength": {
                             "type": "number",
                             "minimum": 0,

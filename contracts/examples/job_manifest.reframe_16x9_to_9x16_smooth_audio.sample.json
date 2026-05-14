@@ -72,7 +72,8 @@
         },
         "reframe_planning": {
             "framing_mode": "center_subject",
-            "clamp_to_source": true
+            "clamp_to_source": true,
+            "lookahead_switch_confirmation_frames": 4
         },
         "easing_smoothing": {
             "smoothing_method": "exponential",

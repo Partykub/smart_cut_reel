@@ -53,6 +53,7 @@ class BodyDetectionService:
         detection_result = self._detect_proxy_frames(
             proxy_bytes=context.read_bytes(proxy_object_key),
             frames=frames,
+            sample_fps=float(sampled_frames.get("sample_fps") or 0.0),
             proxy_width=proxy_width,
             proxy_height=proxy_height,
             source_width=source_width,
@@ -177,6 +178,7 @@ class BodyDetectionService:
         *,
         proxy_bytes: bytes,
         frames: list[dict[str, Any]],
+        sample_fps: float,
         proxy_width: int,
         proxy_height: int,
         source_width: int,
@@ -231,6 +233,7 @@ class BodyDetectionService:
                         capture=capture,
                         yolo_model=yolo_model,
                         frames=frames,
+                        sample_fps=sample_fps,
                         proxy_width=proxy_width,
                         proxy_height=proxy_height,
                         source_width=source_width,
@@ -263,6 +266,7 @@ class BodyDetectionService:
                             capture=capture,
                             yolo_model=yolo_model,
                             frames=frames,
+                            sample_fps=sample_fps,
                             proxy_width=proxy_width,
                             proxy_height=proxy_height,
                             source_width=source_width,
@@ -319,6 +323,7 @@ class BodyDetectionService:
         capture: Any,
         yolo_model: Any,
         frames: list[dict[str, Any]],
+        sample_fps: float,
         proxy_width: int,
         proxy_height: int,
         source_width: int,
@@ -341,6 +346,7 @@ class BodyDetectionService:
         previous_center: tuple[float, float] | None = None
         scale_x = source_width / proxy_width
         scale_y = source_height / proxy_height
+        proxy_fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0)
         _heartbeat_interval = 10
         total_seconds = float(frames[-1].get("t") or 0.0) if frames else 0.0
         for frame_number, frame in enumerate(frames):
@@ -358,8 +364,15 @@ class BodyDetectionService:
             if not isinstance(frame, dict):
                 continue
             frame_index = int(frame.get("index") or 0)
-            timestamp_ms = float(frame.get("t") or 0.0) * 1000.0
-            capture.set(cv2.CAP_PROP_POS_MSEC, timestamp_ms)
+            timestamp_seconds = float(frame.get("t") or 0.0)
+            self._seek_capture_to_sample(
+                capture=capture,
+                cv2=cv2,
+                sample_index=frame_index,
+                timestamp_seconds=timestamp_seconds,
+                proxy_fps=proxy_fps,
+                sample_fps=sample_fps,
+            )
             ok, image = capture.read()
             if not ok or image is None:
                 continue
@@ -410,6 +423,27 @@ class BodyDetectionService:
             )
             sources_by_frame[frame_index] = selected_source
         return results, sources_by_frame, debug_boxes_by_frame
+
+    def _seek_capture_to_sample(
+        self,
+        *,
+        capture: Any,
+        cv2: Any,
+        sample_index: int,
+        timestamp_seconds: float,
+        proxy_fps: float,
+        sample_fps: float,
+    ) -> None:
+        if self._can_seek_by_sample_index(sample_fps=sample_fps, proxy_fps=proxy_fps):
+            if capture.set(cv2.CAP_PROP_POS_FRAMES, max(0, sample_index)):
+                return
+
+        capture.set(cv2.CAP_PROP_POS_MSEC, max(0.0, timestamp_seconds * 1000.0))
+
+    def _can_seek_by_sample_index(self, *, sample_fps: float, proxy_fps: float) -> bool:
+        if sample_fps <= 0 or proxy_fps <= 0:
+            return False
+        return abs(sample_fps - proxy_fps) <= max(0.1, sample_fps * 0.01)
 
     def _scale_detection_candidate(
         self,

@@ -9,6 +9,9 @@ from services.common.runtime import ServiceContext
 from services.common.runtime import ServiceWarning
 
 
+MIN_CONFIRMATION_DT_SECONDS = 1.0 / 15.0
+
+
 class TrackInterpolationService:
     service_id = "track_interpolation"
 
@@ -158,7 +161,7 @@ def interpolate_tracks(
             last_valid_index = index
             continue
         distance = _center_distance(previous_track, track)
-        speed = distance / dt
+        speed = distance / max(dt, MIN_CONFIRMATION_DT_SECONDS)
         if speed > max_center_jump_per_second:
             if _is_confirmed_transition(
                 tracks=tracks,
@@ -221,7 +224,7 @@ def _is_confirmed_transition(
         return False
 
     distance = _center_distance(current_track, next_track)
-    speed = distance / dt
+    speed = distance / max(dt, MIN_CONFIRMATION_DT_SECONDS)
     return speed <= max_center_jump_per_second
 
 

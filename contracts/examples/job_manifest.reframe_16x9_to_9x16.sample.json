@@ -59,7 +59,8 @@
         "reframe_planning": {
             "framing_mode": "center_subject",
             "clamp_to_source": true,
-            "face_hint_dead_zone_px": 48
+            "face_hint_dead_zone_px": 48,
+            "lookahead_switch_confirmation_frames": 4
         },
         "easing_smoothing": {
             "smoothing_method": "exponential",

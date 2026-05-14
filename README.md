@@ -101,8 +101,15 @@ Relevant reframe-planning config keys under `job_manifest.service_config.reframe
 
 - `framing_mode`: `center_subject` keeps the crop anchored to the detected subject center
 - `face_hint_dead_zone_px`: ignore small center changes below this threshold and keep the previous anchor
+- `lookahead_switch_confirmation_frames`: before switching to a far-away new subject, require that subject to persist across this many future frames
 
-Current local defaults used by the frontend/templates are `framing_mode = center_subject` and `face_hint_dead_zone_px = 48`.
+Current local defaults used by the frontend/templates are `framing_mode = center_subject`, `face_hint_dead_zone_px = 48`, and `lookahead_switch_confirmation_frames = 4`.
+
+Set `lookahead_switch_confirmation_frames = 0` to preserve the old immediate-switch behavior. Raising it reduces brief false jumps between speakers, but values that are too high can make genuine speaker changes feel late.
+
+Recent debugging note:
+- `job_85e47b795ba7` exposed a high-FPS false-outlier case in `services/track_interpolation/`: `body_tracks_raw` detected the new subject correctly, but `body_tracks_interpolated` overwrote that frame as `outlier_adjusted` because the px/sec threshold was evaluated too aggressively on ~60 fps footage. The fix floors the confirmation/outlier `dt` so normal one-frame subject changes on high-FPS video are not incorrectly held on the previous track.
+- `job_cb621fb9d7b0` exposed a body-detection frame-selection drift on high-FPS proxy video: `sampled_frames.t` came from source timing, but OpenCV reported a slightly different proxy FPS, so timestamp-based seeking could land on the previous proxy frame. The fix prefers exact sampled-frame index seeking whenever `sample_fps` and proxy FPS are close enough, and falls back to timestamp seeks otherwise.
 
 When face detection succeeds, downstream tracks use the face-centered box. If face detection misses a frame, the service falls back to the selected body box for that frame; if body detection also misses, it falls back to the centered track behavior that already existed.
 

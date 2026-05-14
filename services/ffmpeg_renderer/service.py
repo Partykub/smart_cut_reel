@@ -171,9 +171,9 @@ class FFmpegRendererService:
             "audio_codec": "aac",
             "audio_transition": "crossfade",
             "audio_transition_seconds": 0.02,
-            "overlay_max_width": 960,
-            "overlay_max_height": 540,
-            "overlay_fps_cap": 15.0,
+            "overlay_max_width": 0,
+            "overlay_max_height": 0,
+            "overlay_fps_cap": 0.0,
             "overlay_video_codec": "libx264",
             "overlay_preset": "ultrafast",
             "overlay_crf": 32,
@@ -358,34 +358,155 @@ class FFmpegRendererService:
             keyframes,
             key=lambda k: float(k.get("t") or 0.0),
         )
-        windows: list[tuple[float, float, dict[str, Any]]] = []
-        for index in range(len(sorted_kf)):
-            t_start = float(sorted_kf[index].get("t") or 0.0)
-            t_end = float(sorted_kf[index + 1].get("t") or duration) if index + 1 < len(sorted_kf) else duration
-            windows.append((t_start, t_end, sorted_kf[index]))
-
-        single_window = [
-            {
-                "source_start": 0.0,
-                "source_end": duration,
-                "windows": windows,
-            }
-        ]
-
-        self._render_keep_segments(
+        self._render_smooth_video_frames(
             src_path=src_path,
             out_path=out_path,
-            keep_segments=single_window,
+            keyframes=sorted_kf,
             crop_w_e=crop_w_e,
             crop_h_e=crop_h_e,
             target_w=target_w,
             target_h=target_h,
             ffmpeg_config=ffmpeg_config,
             audio_policy=str(plan.get("audio_policy") or "copy_if_possible_else_aac"),
-            mux_full_audio=True,
             audio_src_path=audio_src_path,
             source_has_audio_stream=source_has_audio_stream,
         )
+
+    def _render_smooth_video_frames(
+        self,
+        *,
+        src_path: Path,
+        out_path: Path,
+        keyframes: list[dict[str, Any]],
+        crop_w_e: int,
+        crop_h_e: int,
+        target_w: int,
+        target_h: int,
+        ffmpeg_config: dict[str, Any],
+        audio_policy: str,
+        audio_src_path: Path,
+        source_has_audio_stream: bool,
+    ) -> None:
+        capture = cv2.VideoCapture(str(src_path))
+        if not capture.isOpened():
+            raise ValueError("failed to open source video for smooth crop rendering")
+
+        frame_width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+        frame_height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+        fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0)
+        if frame_width <= 0 or frame_height <= 0 or fps <= 0:
+            capture.release()
+            raise ValueError("source video has invalid dimensions or fps for smooth crop rendering")
+
+        temp_video_path = out_path.with_suffix(".video.mp4")
+        writer = cv2.VideoWriter(
+            str(temp_video_path),
+            cv2.VideoWriter_fourcc(*"mp4v"),
+            fps,
+            (target_w, target_h),
+        )
+        if not writer.isOpened():
+            capture.release()
+            raise ValueError("failed to create smooth crop video writer")
+
+        sorted_keyframes = sorted(
+            [keyframe for keyframe in keyframes if isinstance(keyframe, dict)],
+            key=lambda keyframe: float(keyframe.get("t") or 0.0),
+        )
+        keyframe_frames = [int(keyframe.get("frame_index") or 0) for keyframe in sorted_keyframes]
+        keyframe_times = [float(keyframe.get("t") or 0.0) for keyframe in sorted_keyframes]
+
+        frame_index = 0
+        while True:
+            ok, frame = capture.read()
+            if not ok:
+                break
+
+            current_t = frame_index / fps
+            crop_x, crop_y, crop_width, crop_height = self._crop_box_for_frame(
+                keyframes=sorted_keyframes,
+                keyframe_frames=keyframe_frames,
+                keyframe_times=keyframe_times,
+                frame_index=frame_index,
+                t=current_t,
+                crop_width=crop_w_e,
+                crop_height=crop_h_e,
+                frame_width=frame_width,
+                frame_height=frame_height,
+            )
+
+            cropped = frame[crop_y:crop_y + crop_height, crop_x:crop_x + crop_width]
+            if cropped.size == 0:
+                capture.release()
+                writer.release()
+                raise ValueError("smooth crop rendering produced an empty frame crop")
+
+            rendered = cv2.resize(cropped, (target_w, target_h), interpolation=cv2.INTER_AREA)
+            writer.write(rendered)
+            frame_index += 1
+
+        capture.release()
+        writer.release()
+
+        self._finalize_smooth_video(
+            temp_video_path=temp_video_path,
+            src_path=src_path,
+            out_path=out_path,
+            ffmpeg_config=ffmpeg_config,
+            audio_policy=audio_policy,
+            audio_src_path=audio_src_path,
+            source_has_audio_stream=source_has_audio_stream,
+        )
+
+    def _finalize_smooth_video(
+        self,
+        *,
+        temp_video_path: Path,
+        src_path: Path,
+        out_path: Path,
+        ffmpeg_config: dict[str, Any],
+        audio_policy: str,
+        audio_src_path: Path,
+        source_has_audio_stream: bool,
+    ) -> None:
+        video_codec = str(ffmpeg_config.get("video_codec") or "libx264")
+        audio_codec = str(ffmpeg_config.get("audio_codec") or "aac")
+        use_external_wav = audio_src_path != src_path
+        has_audio = source_has_audio_stream if not use_external_wav else _wav_file_has_audio(audio_src_path)
+
+        cmd: list[str] = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(temp_video_path),
+        ]
+        if has_audio:
+            cmd.extend(["-i", str(audio_src_path), "-map", "0:v:0", "-map", "1:a:0", "-shortest"])
+        else:
+            cmd.append("-an")
+
+        cmd.extend(
+            [
+                "-c:v",
+                video_codec,
+                "-preset",
+                "fast",
+                "-crf",
+                "23",
+                "-pix_fmt",
+                "yuv420p",
+                "-movflags",
+                "+faststart",
+            ]
+        )
+        if has_audio:
+            if audio_policy == "aac_transcode" or use_external_wav:
+                cmd.extend(["-c:a", audio_codec, "-b:a", "192k"])
+            else:
+                cmd.extend(["-c:a", "copy"])
+
+        cmd.append(str(out_path))
+        self._run_ffmpeg(cmd)
 
     def _render_with_cuts(
         self,
@@ -776,6 +897,9 @@ class FFmpegRendererService:
             key=lambda keyframe: float(keyframe.get("t") or 0.0),
         )
         tracks = [track for track in raw_tracks.get("tracks", []) if isinstance(track, dict)]
+        keyframe_frames = [int(keyframe.get("frame_index") or 0) for keyframe in sorted_keyframes]
+        keyframe_times = [float(keyframe.get("t") or 0.0) for keyframe in sorted_keyframes]
+        track_frames = [int(track.get("frame_index") or 0) for track in tracks]
         track_times = [float(track.get("t") or 0.0) for track in tracks]
 
         frame_index = 0
@@ -789,9 +913,18 @@ class FFmpegRendererService:
                 frame_index += 1
                 continue
 
-            track = self._track_for_time(tracks, track_times, current_t)
-            crop_box = self._crop_box_for_time(
+            track = self._track_for_frame(
+                tracks,
+                track_frames=track_frames,
+                track_times=track_times,
+                frame_index=frame_index,
+                t=current_t,
+            )
+            crop_box = self._crop_box_for_frame(
                 keyframes=sorted_keyframes,
+                keyframe_frames=keyframe_frames,
+                keyframe_times=keyframe_times,
+                frame_index=frame_index,
                 t=current_t,
                 crop_width=crop_width,
                 crop_height=crop_height,
@@ -899,6 +1032,24 @@ class FFmpegRendererService:
             return tracks[0]
         return tracks[index]
 
+    def _track_for_frame(
+        self,
+        tracks: list[dict[str, Any]],
+        *,
+        track_frames: list[int],
+        track_times: list[float],
+        frame_index: int,
+        t: float,
+    ) -> dict[str, Any] | None:
+        if track_frames:
+            index = bisect.bisect_right(track_frames, frame_index) - 1
+            if index >= 0:
+                return tracks[index]
+            if tracks:
+                return tracks[0]
+
+        return self._track_for_time(tracks, track_times, t)
+
     def _crop_box_for_time(
         self,
         *,
@@ -918,6 +1069,37 @@ class FFmpegRendererService:
         x = max(0, min(x, max(0, frame_width - crop_width)))
         y = max(0, min(y, max(0, frame_height - crop_height)))
         return x, y, crop_width, crop_height
+
+    def _crop_box_for_frame(
+        self,
+        *,
+        keyframes: list[dict[str, Any]],
+        keyframe_frames: list[int],
+        keyframe_times: list[float],
+        frame_index: int,
+        t: float,
+        crop_width: int,
+        crop_height: int,
+        frame_width: int,
+        frame_height: int,
+    ) -> tuple[int, int, int, int]:
+        if keyframe_frames:
+            index = max(0, bisect.bisect_right(keyframe_frames, frame_index) - 1)
+            keyframe = keyframes[index]
+            x = int(round(float(keyframe.get("x") or 0.0)))
+            y = int(round(float(keyframe.get("y") or 0.0)))
+            x = max(0, min(x, max(0, frame_width - crop_width)))
+            y = max(0, min(y, max(0, frame_height - crop_height)))
+            return x, y, crop_width, crop_height
+
+        return self._crop_box_for_time(
+            keyframes=keyframes,
+            t=t,
+            crop_width=crop_width,
+            crop_height=crop_height,
+            frame_width=frame_width,
+            frame_height=frame_height,
+        )
 
     def _draw_overlay(
         self,
