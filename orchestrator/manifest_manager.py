@@ -200,6 +200,20 @@ class ManifestManager:
         self.write_service_status(job_id, status_document)
         return status_document
 
+    def touch_service_status(
+        self,
+        job_id: str,
+        progress: dict[str, Any] | None = None,
+    ) -> None:
+        """Bump updated_at and optionally write progress (heartbeat ping)."""
+        status_document = self.read_service_status(job_id)
+        status_document["updated_at"] = utc_now()
+        if progress is not None:
+            status_document["progress"] = progress
+        elif "progress" in status_document:
+            del status_document["progress"]
+        self.write_service_status(job_id, status_document)
+
     def _read_manifest(self, job_id: str, manifest_name: str) -> dict[str, Any]:
         validate_job_id(job_id)
         return self.store.download_json(manifest_path(job_id, manifest_name))

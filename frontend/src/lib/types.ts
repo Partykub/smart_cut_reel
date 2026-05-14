@@ -39,6 +39,12 @@ export interface ServiceWarning {
   created_at: string;
 }
 
+export interface StepProgress {
+  current_seconds: number;
+  total_seconds: number;
+  percent: number;
+}
+
 export interface ServiceStatus {
   schema_version: string;
   job_id: string;
@@ -48,6 +54,7 @@ export interface ServiceStatus {
   steps: Partial<Record<StepName, StepState>>;
   warnings: ServiceWarning[];
   errors: string[];
+  progress?: StepProgress;
 }
 
 export interface ArtifactEntry {

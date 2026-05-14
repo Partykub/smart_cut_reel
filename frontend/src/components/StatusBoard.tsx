@@ -10,6 +10,7 @@ import {
   type ServiceStatus,
   type StepName,
   type StepState,
+  type StepProgress,
   type StepStatus,
 } from "@/lib/types";
 
@@ -239,6 +240,9 @@ export function StatusBoard({
               ) : null}
             </div>
           </div>
+          {status.progress ? (
+            <StepProgressBar progress={status.progress} />
+          ) : null}
           <div className="mt-4 h-2 overflow-hidden rounded-full bg-zinc-900">
             <div
               className="h-full rounded-full bg-gradient-to-r from-sky-400 via-cyan-300 to-sky-500 transition-[width] duration-500"
@@ -394,4 +398,32 @@ function formatRelativeTime(valueMs: number): string {
   if (valueMs < 60_000) return `${Math.floor(valueMs / 1000)}s`;
   if (valueMs < 3_600_000) return `${Math.floor(valueMs / 60_000)}m`;
   return `${Math.floor(valueMs / 3_600_000)}h`;
+}
+
+function formatSeconds(s: number): string {
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  if (m > 0) return `${m}m ${String(sec).padStart(2, "0")}s`;
+  return `${sec}s`;
+}
+
+function StepProgressBar({ progress }: { progress: StepProgress }) {
+  return (
+    <div className="mt-4 rounded-lg border border-sky-900/30 bg-zinc-950/60 p-3">
+      <div className="mb-2 flex items-center justify-between text-xs text-zinc-400">
+        <span className="font-mono">
+          {formatSeconds(progress.current_seconds)}
+          <span className="text-zinc-600"> / </span>
+          {formatSeconds(progress.total_seconds)}
+        </span>
+        <span className="font-mono text-sky-300">{progress.percent.toFixed(1)}%</span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-zinc-800">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-sky-500 to-cyan-400 transition-[width] duration-700"
+          style={{ width: `${Math.min(100, progress.percent)}%` }}
+        />
+      </div>
+    </div>
+  );
 }

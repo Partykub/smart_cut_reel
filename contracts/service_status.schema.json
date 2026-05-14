@@ -82,6 +82,16 @@
                 "type": "string",
                 "minLength": 1
             }
+        },
+        "progress": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["current_seconds", "total_seconds", "percent"],
+            "properties": {
+                "current_seconds": { "type": "number", "minimum": 0 },
+                "total_seconds": { "type": "number", "minimum": 0 },
+                "percent": { "type": "number", "minimum": 0, "maximum": 100 }
+            }
         }
     },
     "$defs": {

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+from pathlib import Path
 import tempfile
 from typing import Any
 
@@ -54,6 +55,7 @@ class BodyDetectionService:
             source_width=source_width,
             source_height=source_height,
             config=config,
+            heartbeat_fn=context.heartbeat,
         )
         detections_by_frame = detection_result.detections_by_frame
 
@@ -149,7 +151,7 @@ class BodyDetectionService:
             "subject_selection_strategy": "nearest_previous_crop_center",
             "min_confidence": 0.9,
             "model_path": os.getenv("BODY_DETECTION_YOLO_MODEL", "yolov8m.pt"),
-            "device_preference": "gpu_first",
+            "device_preference": os.getenv("BODY_DETECTION_DEVICE_PREFERENCE", "gpu_first"),
             "image_size": 640,
             "person_class_id": 0,
         }
@@ -166,6 +168,7 @@ class BodyDetectionService:
         source_width: int,
         source_height: int,
         config: dict[str, Any],
+        heartbeat_fn: Any = None,
     ) -> DetectionRunResult:
         try:
             import cv2
@@ -217,6 +220,7 @@ class BodyDetectionService:
                         image_size=image_size,
                         person_class_id=person_class_id,
                         device=active_device,
+                        heartbeat_fn=heartbeat_fn,
                     )
                 except Exception as exc:
                     if active_device != "cpu":
@@ -243,6 +247,7 @@ class BodyDetectionService:
                             image_size=image_size,
                             person_class_id=person_class_id,
                             device=active_device,
+                            heartbeat_fn=heartbeat_fn,
                         )
                     else:
                         raise ValueError(f"YOLO body detection failed on CPU: {exc}") from exc
@@ -290,12 +295,26 @@ class BodyDetectionService:
         image_size: int,
         person_class_id: int,
         device: str,
+        heartbeat_fn: Any = None,
     ) -> dict[int, DetectionCandidate]:
         results: dict[int, DetectionCandidate] = {}
         previous_center: tuple[float, float] | None = None
         scale_x = source_width / proxy_width
         scale_y = source_height / proxy_height
-        for frame in frames:
+        _heartbeat_interval = 10
+        total_seconds = float(frames[-1].get("t") or 0.0) if frames else 0.0
+        for frame_number, frame in enumerate(frames):
+            if heartbeat_fn is not None and frame_number % _heartbeat_interval == 0:
+                current_t = float(frame.get("t") or 0.0)
+                heartbeat_fn(
+                    {
+                        "current_seconds": round(current_t, 1),
+                        "total_seconds": round(total_seconds, 1),
+                        "percent": round(
+                            current_t / total_seconds * 100, 1
+                        ) if total_seconds > 0 else 0.0,
+                    }
+                )
             if not isinstance(frame, dict):
                 continue
             frame_index = int(frame.get("index") or 0)
