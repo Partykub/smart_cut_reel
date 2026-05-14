@@ -189,10 +189,10 @@ class BodyDetectionService:
         active_backend = self._backend_name(active_device)
         warnings: list[ServiceWarning] = []
 
-        with tempfile.NamedTemporaryFile(suffix=".mp4") as handle:
-            handle.write(proxy_bytes)
-            handle.flush()
-            capture = cv2.VideoCapture(handle.name)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            proxy_path = Path(tmp_dir) / "proxy.mp4"
+            proxy_path.write_bytes(proxy_bytes)
+            capture = cv2.VideoCapture(str(proxy_path))
             if not capture.isOpened():
                 return DetectionRunResult(
                     detections_by_frame={},

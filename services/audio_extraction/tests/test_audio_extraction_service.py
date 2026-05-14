@@ -19,13 +19,14 @@ from services.common.runtime import build_context
 def _make_wav_bytes(*, sample_rate: int = 16000, channels: int = 1, duration_seconds: float = 1.0) -> bytes:
     n_frames = int(sample_rate * duration_seconds)
     pcm = b"".join(struct.pack("<h", 0) for _ in range(n_frames * channels))
-    with tempfile.NamedTemporaryFile(suffix=".wav") as handle:
-        with wave.open(handle.name, "wb") as wav_out:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir) / "output.wav"
+        with wave.open(str(tmp_path), "wb") as wav_out:
             wav_out.setnchannels(channels)
             wav_out.setsampwidth(2)
             wav_out.setframerate(sample_rate)
             wav_out.writeframes(pcm)
-        return Path(handle.name).read_bytes()
+        return tmp_path.read_bytes()
 
 
 class AudioExtractionServiceTests(unittest.TestCase):

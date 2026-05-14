@@ -81,18 +81,16 @@ class AudioExtractionService:
 
 
 def _extract_audio_to_wav(source_bytes: bytes, *, sample_rate: int, channels: int) -> bytes:
-    with (
-        tempfile.NamedTemporaryFile(suffix=".mp4") as src_handle,
-        tempfile.NamedTemporaryFile(suffix=".wav") as dst_handle,
-    ):
-        src_handle.write(source_bytes)
-        src_handle.flush()
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        src = Path(tmp_dir) / "input.mp4"
+        dst = Path(tmp_dir) / "output.wav"
+        src.write_bytes(source_bytes)
 
         cmd = [
             "ffmpeg",
             "-y",
             "-i",
-            str(src_handle.name),
+            str(src),
             "-vn",
             "-ac",
             str(channels),
@@ -102,11 +100,11 @@ def _extract_audio_to_wav(source_bytes: bytes, *, sample_rate: int, channels: in
             "pcm_s16le",
             "-f",
             "wav",
-            str(dst_handle.name),
+            str(dst),
         ]
         completed = subprocess.run(cmd, check=False, capture_output=True, text=True)
         if completed.returncode != 0:
             detail = completed.stderr.strip() or completed.stdout.strip() or "ffmpeg audio extraction failed"
             raise ValueError(detail)
 
-        return Path(dst_handle.name).read_bytes()
+        return dst.read_bytes()
