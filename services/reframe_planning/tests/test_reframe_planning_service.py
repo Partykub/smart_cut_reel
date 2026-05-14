@@ -70,6 +70,7 @@ class ReframePlanningServiceTests(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_builds_clamped_reframe_keyframes(self) -> None:
+        self.request.config = {"framing_mode": "center_subject"}
         response = self.service.run(build_context(self.request, self.store))
         payload = self.store.download_json(self.request.expected_outputs["reframe_plan_raw"])
 
@@ -80,3 +81,71 @@ class ReframePlanningServiceTests(unittest.TestCase):
         self.assertEqual(payload["keyframes"][1]["x"], 1312.0)
         self.assertEqual(payload["keyframes"][1]["y"], 0.0)
         self.assertTrue(payload["keyframes"][1]["interpolated"])
+
+    def test_uses_face_anchor_from_track_center(self) -> None:
+        self.request.config = {"framing_mode": "center_subject"}
+        self.store.upload_json(
+            "jobs/job_test/artifacts/body_tracks_interpolated.json",
+            {
+                "tracks": [
+                    {
+                        "frame_index": 0,
+                        "t": 0.0,
+                        "bbox": {"x": 700.0, "y": 100.0, "w": 220.0, "h": 500.0},
+                        "body_bbox": {"x": 700.0, "y": 100.0, "w": 220.0, "h": 500.0},
+                        "face_bbox": {"x": 840.0, "y": 180.0, "w": 60.0, "h": 80.0},
+                        "center": {"x": 870.0, "y": 350.0},
+                        "confidence": 0.92,
+                        "source": "retinaface_detector",
+                    }
+                ]
+            },
+        )
+
+        self.service.run(build_context(self.request, self.store))
+        payload = self.store.download_json(self.request.expected_outputs["reframe_plan_raw"])
+
+        self.assertEqual(payload["face_hint_dead_zone_px"], 48.0)
+        self.assertEqual(payload["keyframes"][0]["anchor_center_x"], 870.0)
+        self.assertEqual(payload["keyframes"][0]["center_x"], 870.0)
+        self.assertEqual(payload["keyframes"][0]["face_offset_x"], 0.0)
+        self.assertEqual(payload["keyframes"][0]["face_offset_smoothed_x"], 0.0)
+        self.assertEqual(payload["keyframes"][0]["x"], 566.0)
+
+    def test_keeps_previous_face_anchor_inside_dead_zone(self) -> None:
+        self.request.config = {"framing_mode": "center_subject"}
+        self.store.upload_json(
+            "jobs/job_test/artifacts/body_tracks_interpolated.json",
+            {
+                "tracks": [
+                    {
+                        "frame_index": 0,
+                        "t": 0.0,
+                        "bbox": {"x": 700.0, "y": 100.0, "w": 220.0, "h": 500.0},
+                        "body_bbox": {"x": 700.0, "y": 100.0, "w": 220.0, "h": 500.0},
+                        "face_bbox": {"x": 840.0, "y": 180.0, "w": 60.0, "h": 80.0},
+                        "center": {"x": 870.0, "y": 350.0},
+                        "confidence": 0.92,
+                        "source": "retinaface_detector",
+                    },
+                    {
+                        "frame_index": 1,
+                        "t": 0.2,
+                        "bbox": {"x": 700.0, "y": 100.0, "w": 220.0, "h": 500.0},
+                        "body_bbox": {"x": 700.0, "y": 100.0, "w": 220.0, "h": 500.0},
+                        "face_bbox": {"x": 848.0, "y": 180.0, "w": 60.0, "h": 80.0},
+                        "center": {"x": 878.0, "y": 350.0},
+                        "confidence": 0.92,
+                        "source": "retinaface_detector",
+                    },
+                ]
+            },
+        )
+
+        self.service.run(build_context(self.request, self.store))
+        payload = self.store.download_json(self.request.expected_outputs["reframe_plan_raw"])
+
+        self.assertEqual(payload["keyframes"][0]["center_x"], 870.0)
+        self.assertEqual(payload["keyframes"][1]["anchor_center_x"], 878.0)
+        self.assertEqual(payload["keyframes"][1]["center_x"], 870.0)
+        self.assertEqual(payload["keyframes"][1]["x"], 566.0)

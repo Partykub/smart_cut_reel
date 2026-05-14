@@ -10,6 +10,8 @@ from services.common.runtime import RunMinIO
 from services.common.runtime import RunRequest
 from services.common.runtime import build_context
 from services.ffmpeg_renderer.service import FFmpegRendererService
+from services.ffmpeg_renderer.service import _overlay_render_spec
+from services.ffmpeg_renderer.service import _scale_track_for_overlay
 
 
 def _ffmpeg_available() -> bool:
@@ -124,6 +126,21 @@ class FFmpegRendererServiceTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
+
+
+    class FFmpegRendererOverlayScalingTests(unittest.TestCase):
+        def test_scale_track_for_overlay_preserves_debug_body_and_face_boxes(self) -> None:
+            track = {
+                "bbox": {"x": 100.0, "y": 50.0, "w": 40.0, "h": 60.0},
+                "body_bbox": {"x": 80.0, "y": 30.0, "w": 100.0, "h": 160.0},
+                "face_bbox": {"x": 100.0, "y": 50.0, "w": 40.0, "h": 60.0},
+            }
+
+            scaled = _scale_track_for_overlay(track, scale_x=0.5, scale_y=0.25)
+
+            self.assertEqual(scaled["bbox"], {"x": 50.0, "y": 12.5, "w": 20.0, "h": 15.0})
+            self.assertEqual(scaled["body_bbox"], {"x": 40.0, "y": 7.5, "w": 50.0, "h": 40.0})
+            self.assertEqual(scaled["face_bbox"], {"x": 50.0, "y": 12.5, "w": 20.0, "h": 15.0})
 
     def test_static_crop_writes_mp4(self) -> None:
         response = self.service.run(build_context(self.request, self.store))
@@ -620,6 +637,22 @@ class FFmpegRendererTrackLookupTests(unittest.TestCase):
 
         self.assertIsNotNone(selected)
         self.assertEqual(selected["frame_index"], 790)
+
+
+class FFmpegRendererOverlaySpecTests(unittest.TestCase):
+    def test_overlay_render_spec_downscales_and_caps_fps(self) -> None:
+        width, height, fps, stride = _overlay_render_spec(
+            frame_width=1920,
+            frame_height=1080,
+            fps=30.0,
+            max_width=960,
+            max_height=540,
+            fps_cap=15.0,
+        )
+
+        self.assertEqual((width, height), (960, 540))
+        self.assertEqual(fps, 15.0)
+        self.assertEqual(stride, 2)
 
 
 if __name__ == "__main__":

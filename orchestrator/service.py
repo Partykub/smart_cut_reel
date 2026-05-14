@@ -82,6 +82,7 @@ class OrchestratorService:
         audio_enhancement_partial: dict[str, Any] | None = None,
         output_audio_source: str | None = None,
         vad_audio_source: str | None = None,
+        service_config: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         if not source_bytes:
             raise ValueError("source_bytes must not be empty.")
@@ -112,6 +113,7 @@ class OrchestratorService:
             audio_enhancement_partial=audio_enhancement_partial,
             output_audio_source=output_audio_source,
             vad_audio_source=vad_audio_source,
+            service_config_overrides=service_config,
         )
 
         self.artifact_helper.upload_source_video(
@@ -239,6 +241,7 @@ class OrchestratorService:
         audio_enhancement_partial: dict[str, Any] | None = None,
         output_audio_source: str | None = None,
         vad_audio_source: str | None = None,
+        service_config_overrides: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         template = self.job_manifest_templates.get(pipeline_id)
         if template is None:
@@ -312,6 +315,20 @@ class OrchestratorService:
             output_audio_source=output_audio_source,
         )
         _apply_vad_audio_source_manifest(manifest, vad_audio_source=vad_audio_source)
+
+        if service_config_overrides:
+            existing_service_config = manifest.get("service_config")
+            if not isinstance(existing_service_config, dict):
+                existing_service_config = {}
+            for step_id, override in service_config_overrides.items():
+                if not isinstance(step_id, str) or not isinstance(override, dict):
+                    continue
+                current_step_config = existing_service_config.get(step_id)
+                if not isinstance(current_step_config, dict):
+                    current_step_config = {}
+                current_step_config.update(override)
+                existing_service_config[step_id] = current_step_config
+            manifest["service_config"] = existing_service_config
 
         return manifest
 

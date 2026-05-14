@@ -31,6 +31,9 @@ class DetectionRunResult:
     detector_backend: str
     track_source: str
     warnings: list[ServiceWarning]
+    face_detector_backend: str | None = None
+    sources_by_frame: dict[int, str] | None = None
+    debug_boxes_by_frame: dict[int, dict[str, DetectionCandidate]] | None = None
 
 
 class BodyDetectionService:
@@ -58,6 +61,8 @@ class BodyDetectionService:
             heartbeat_fn=context.heartbeat,
         )
         detections_by_frame = detection_result.detections_by_frame
+        sources_by_frame = detection_result.sources_by_frame or {}
+        debug_boxes_by_frame = detection_result.debug_boxes_by_frame or {}
 
         center_x = source_width / 2.0
         center_y = source_height / 2.0
@@ -73,6 +78,7 @@ class BodyDetectionService:
             frame_index = int(frame.get("index") or 0)
             timestamp = float(frame.get("t") or 0.0)
             detection = detections_by_frame.get(frame_index)
+            debug_boxes = debug_boxes_by_frame.get(frame_index, {})
             if detection is None:
                 missing_count += 1
                 tracks.append(
@@ -89,6 +95,8 @@ class BodyDetectionService:
                         "confidence": 0.0,
                         "missing": True,
                         "source": "fallback_center_track",
+                        "body_bbox": None,
+                        "face_bbox": None,
                     }
                 )
                 continue
@@ -110,7 +118,9 @@ class BodyDetectionService:
                     },
                     "confidence": round(detection.confidence, 4),
                     "missing": False,
-                    "source": detection_result.track_source,
+                    "source": sources_by_frame.get(frame_index, detection_result.track_source),
+                    "body_bbox": self._serialize_optional_bbox(debug_boxes.get("body")),
+                    "face_bbox": self._serialize_optional_bbox(debug_boxes.get("face")),
                 }
             )
 
@@ -118,6 +128,7 @@ class BodyDetectionService:
             "job_id": context.job_id,
             "coordinate_space": "source",
             "detector_backend": detection_result.detector_backend,
+            "face_detector_backend": detection_result.face_detector_backend,
             "source_resolution": {"width": source_width, "height": source_height},
             "proxy_resolution": {"width": proxy_width, "height": proxy_height},
             "detection_summary": {
@@ -148,8 +159,11 @@ class BodyDetectionService:
 
     def _config(self, context: ServiceContext) -> dict[str, Any]:
         defaults = {
+            "face_detector_backend": "retinaface",
             "subject_selection_strategy": "nearest_previous_crop_center",
             "min_confidence": 0.9,
+            "face_min_confidence": 0.6,
+            "face_recognition_model": "hog",
             "model_path": os.getenv("BODY_DETECTION_YOLO_MODEL", "yolov8m.pt"),
             "device_preference": os.getenv("BODY_DETECTION_DEVICE_PREFERENCE", "gpu_first"),
             "image_size": 640,
@@ -183,6 +197,9 @@ class BodyDetectionService:
         model_path = str(config["model_path"])
         subject_selection_strategy = str(config["subject_selection_strategy"])
         min_confidence = float(config["min_confidence"])
+        face_detector_backend = str(config["face_detector_backend"])
+        face_min_confidence = float(config["face_min_confidence"])
+        face_recognition_model = str(config["face_recognition_model"])
         image_size = int(config["image_size"])
         person_class_id = int(config["person_class_id"])
 
@@ -191,6 +208,7 @@ class BodyDetectionService:
         active_device = preferred_device
         active_backend = self._backend_name(active_device)
         warnings: list[ServiceWarning] = []
+        warning_codes: set[str] = set()
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             proxy_path = Path(tmp_dir) / "proxy.mp4"
@@ -202,11 +220,13 @@ class BodyDetectionService:
                     detector_backend=active_backend,
                     track_source="yolo_person_detector",
                     warnings=warnings,
+                    face_detector_backend=face_detector_backend,
+                    debug_boxes_by_frame={},
                 )
 
             try:
                 try:
-                    detections_by_frame = self._run_detection_pass(
+                    detections_by_frame, sources_by_frame, debug_boxes_by_frame = self._run_detection_pass(
                         cv2=cv2,
                         capture=capture,
                         yolo_model=yolo_model,
@@ -216,11 +236,16 @@ class BodyDetectionService:
                         source_width=source_width,
                         source_height=source_height,
                         min_confidence=min_confidence,
+                        face_detector_backend=face_detector_backend,
+                        face_min_confidence=face_min_confidence,
+                        face_recognition_model=face_recognition_model,
                         subject_selection_strategy=subject_selection_strategy,
                         image_size=image_size,
                         person_class_id=person_class_id,
                         device=active_device,
                         heartbeat_fn=heartbeat_fn,
+                        warnings=warnings,
+                        warning_codes=warning_codes,
                     )
                 except Exception as exc:
                     if active_device != "cpu":
@@ -233,7 +258,7 @@ class BodyDetectionService:
                                 step=self.service_id,
                             )
                         )
-                        detections_by_frame = self._run_detection_pass(
+                        detections_by_frame, sources_by_frame, debug_boxes_by_frame = self._run_detection_pass(
                             cv2=cv2,
                             capture=capture,
                             yolo_model=yolo_model,
@@ -243,11 +268,16 @@ class BodyDetectionService:
                             source_width=source_width,
                             source_height=source_height,
                             min_confidence=min_confidence,
+                            face_detector_backend=face_detector_backend,
+                            face_min_confidence=face_min_confidence,
+                            face_recognition_model=face_recognition_model,
                             subject_selection_strategy=subject_selection_strategy,
                             image_size=image_size,
                             person_class_id=person_class_id,
                             device=active_device,
                             heartbeat_fn=heartbeat_fn,
+                            warnings=warnings,
+                            warning_codes=warning_codes,
                         )
                     else:
                         raise ValueError(f"YOLO body detection failed on CPU: {exc}") from exc
@@ -257,6 +287,9 @@ class BodyDetectionService:
                     detector_backend=active_backend,
                     track_source="yolo_person_detector",
                     warnings=warnings,
+                    face_detector_backend=face_detector_backend,
+                    sources_by_frame=sources_by_frame,
+                    debug_boxes_by_frame=debug_boxes_by_frame,
                 )
             finally:
                 capture.release()
@@ -291,13 +324,20 @@ class BodyDetectionService:
         source_width: int,
         source_height: int,
         min_confidence: float,
+        face_detector_backend: str,
+        face_min_confidence: float,
+        face_recognition_model: str,
         subject_selection_strategy: str,
         image_size: int,
         person_class_id: int,
         device: str,
+        warnings: list[ServiceWarning],
+        warning_codes: set[str],
         heartbeat_fn: Any = None,
-    ) -> dict[int, DetectionCandidate]:
+    ) -> tuple[dict[int, DetectionCandidate], dict[int, str], dict[int, dict[str, DetectionCandidate]]]:
         results: dict[int, DetectionCandidate] = {}
+        sources_by_frame: dict[int, str] = {}
+        debug_boxes_by_frame: dict[int, dict[str, DetectionCandidate]] = {}
         previous_center: tuple[float, float] | None = None
         scale_x = source_width / proxy_width
         scale_y = source_height / proxy_height
@@ -339,14 +379,210 @@ class BodyDetectionService:
             if chosen is None:
                 continue
             previous_center = (chosen.x + (chosen.w / 2.0), chosen.y + (chosen.h / 2.0))
-            results[frame_index] = DetectionCandidate(
-                x=chosen.x * scale_x,
-                y=chosen.y * scale_y,
-                w=chosen.w * scale_x,
-                h=chosen.h * scale_y,
-                confidence=chosen.confidence,
+            selected_candidate = chosen
+            selected_source = "yolo_body_fallback"
+            debug_boxes_by_frame[frame_index] = {
+                "body": self._scale_detection_candidate(chosen, scale_x=scale_x, scale_y=scale_y)
+            }
+            face_candidate = self._detect_face_in_body_candidate(
+                image=image,
+                body_candidate=chosen,
+                face_detector_backend=face_detector_backend,
+                face_min_confidence=face_min_confidence,
+                face_recognition_model=face_recognition_model,
+                warnings=warnings,
+                warning_codes=warning_codes,
             )
-        return results
+            if face_candidate is not None:
+                selected_candidate = face_candidate
+                selected_source = self._track_source_for_face_backend(face_detector_backend)
+                debug_boxes_by_frame[frame_index]["face"] = self._scale_detection_candidate(
+                    face_candidate,
+                    scale_x=scale_x,
+                    scale_y=scale_y,
+                )
+            results[frame_index] = DetectionCandidate(
+                x=selected_candidate.x * scale_x,
+                y=selected_candidate.y * scale_y,
+                w=selected_candidate.w * scale_x,
+                h=selected_candidate.h * scale_y,
+                confidence=selected_candidate.confidence,
+            )
+            sources_by_frame[frame_index] = selected_source
+        return results, sources_by_frame, debug_boxes_by_frame
+
+    def _scale_detection_candidate(
+        self,
+        detection: DetectionCandidate,
+        *,
+        scale_x: float,
+        scale_y: float,
+    ) -> DetectionCandidate:
+        return DetectionCandidate(
+            x=detection.x * scale_x,
+            y=detection.y * scale_y,
+            w=detection.w * scale_x,
+            h=detection.h * scale_y,
+            confidence=detection.confidence,
+        )
+
+    def _serialize_optional_bbox(self, detection: DetectionCandidate | None) -> dict[str, float] | None:
+        if detection is None:
+            return None
+        return {
+            "x": round(detection.x, 2),
+            "y": round(detection.y, 2),
+            "w": round(detection.w, 2),
+            "h": round(detection.h, 2),
+        }
+
+    def _detect_face_in_body_candidate(
+        self,
+        *,
+        image: Any,
+        body_candidate: DetectionCandidate,
+        face_detector_backend: str,
+        face_min_confidence: float,
+        face_recognition_model: str,
+        warnings: list[ServiceWarning],
+        warning_codes: set[str],
+    ) -> DetectionCandidate | None:
+        x1 = max(0, int(body_candidate.x))
+        y1 = max(0, int(body_candidate.y))
+        x2 = max(x1 + 1, int(body_candidate.x + body_candidate.w))
+        y2 = max(y1 + 1, int(body_candidate.y + body_candidate.h))
+        body_crop = image[y1:y2, x1:x2]
+        if body_crop is None or getattr(body_crop, "size", 0) == 0:
+            return None
+
+        try:
+            if face_detector_backend == "face_recognition":
+                face_candidate = self._detect_with_face_recognition(
+                    body_crop=body_crop,
+                    face_recognition_model=face_recognition_model,
+                )
+            else:
+                face_candidate = self._detect_with_retinaface(
+                    body_crop=body_crop,
+                    face_min_confidence=face_min_confidence,
+                )
+        except ImportError as exc:
+            self._append_warning_once(
+                warnings=warnings,
+                warning_codes=warning_codes,
+                code="BODY_DETECTION_FACE_BACKEND_UNAVAILABLE",
+                message=f"Face detector backend '{face_detector_backend}' is unavailable; falling back to body boxes: {exc}",
+            )
+            return None
+        except Exception as exc:
+            self._append_warning_once(
+                warnings=warnings,
+                warning_codes=warning_codes,
+                code="BODY_DETECTION_FACE_BACKEND_FAILED",
+                message=f"Face detector backend '{face_detector_backend}' failed; falling back to body boxes: {exc}",
+            )
+            return None
+
+        if face_candidate is None:
+            return None
+
+        return DetectionCandidate(
+            x=x1 + face_candidate.x,
+            y=y1 + face_candidate.y,
+            w=face_candidate.w,
+            h=face_candidate.h,
+            confidence=face_candidate.confidence,
+        )
+
+    def _detect_with_retinaface(
+        self,
+        *,
+        body_crop: Any,
+        face_min_confidence: float,
+    ) -> DetectionCandidate | None:
+        try:
+            from retinaface import RetinaFace
+        except ImportError as exc:
+            raise ImportError("retinaface package is not installed") from exc
+
+        try:
+            detections = RetinaFace.detect_faces(body_crop, threshold=face_min_confidence)
+        except TypeError:
+            detections = RetinaFace.detect_faces(body_crop)
+
+        if not isinstance(detections, dict):
+            return None
+
+        candidates: list[DetectionCandidate] = []
+        for item in detections.values():
+            if not isinstance(item, dict):
+                continue
+            facial_area = item.get("facial_area")
+            if not isinstance(facial_area, (list, tuple)) or len(facial_area) != 4:
+                continue
+            confidence = float(item.get("score") or item.get("confidence") or 0.0)
+            if confidence < face_min_confidence:
+                continue
+            left, top, right, bottom = [float(value) for value in facial_area]
+            candidates.append(
+                DetectionCandidate(
+                    x=left,
+                    y=top,
+                    w=max(0.0, right - left),
+                    h=max(0.0, bottom - top),
+                    confidence=confidence,
+                )
+            )
+
+        if not candidates:
+            return None
+        return max(candidates, key=lambda candidate: candidate.confidence)
+
+    def _detect_with_face_recognition(
+        self,
+        *,
+        body_crop: Any,
+        face_recognition_model: str,
+    ) -> DetectionCandidate | None:
+        try:
+            import face_recognition
+        except ImportError as exc:
+            raise ImportError("face_recognition package is not installed") from exc
+
+        rgb_crop = body_crop[:, :, ::-1]
+        locations = face_recognition.face_locations(rgb_crop, model=face_recognition_model)
+        candidates: list[DetectionCandidate] = []
+        for top, right, bottom, left in locations:
+            candidates.append(
+                DetectionCandidate(
+                    x=float(left),
+                    y=float(top),
+                    w=max(0.0, float(right - left)),
+                    h=max(0.0, float(bottom - top)),
+                    confidence=1.0,
+                )
+            )
+        if not candidates:
+            return None
+        return max(candidates, key=lambda candidate: candidate.w * candidate.h)
+
+    def _append_warning_once(
+        self,
+        *,
+        warnings: list[ServiceWarning],
+        warning_codes: set[str],
+        code: str,
+        message: str,
+    ) -> None:
+        if code in warning_codes:
+            return
+        warnings.append(ServiceWarning(code=code, message=message, step=self.service_id))
+        warning_codes.add(code)
+
+    def _track_source_for_face_backend(self, face_detector_backend: str) -> str:
+        if face_detector_backend == "face_recognition":
+            return "face_recognition_detector"
+        return "retinaface_detector"
 
     def _detect_people_in_frame(
         self,

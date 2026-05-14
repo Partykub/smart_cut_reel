@@ -68,6 +68,7 @@ class BodyDetectionApiTests(unittest.TestCase):
             },
             detector_backend="yolo_ultralytics_cpu",
             track_source="yolo_person_detector",
+            face_detector_backend="retinaface",
             warnings=[],
         )
 
@@ -94,6 +95,7 @@ class BodyDetectionApiTests(unittest.TestCase):
         output = self.store.download_json(self.output_key)
         self.assertEqual(len(output["tracks"]), 2)
         self.assertEqual(output["detector_backend"], "yolo_ultralytics_cpu")
+        self.assertEqual(output["face_detector_backend"], "retinaface")
         self.assertEqual(output["tracks"][0]["center"], {"x": 300.0, "y": 520.0})
         self.assertEqual(output["tracks"][0]["source"], "yolo_person_detector")
         self.assertFalse(output["tracks"][0]["missing"])

@@ -39,6 +39,7 @@ def create_app(service: OrchestratorService | None = None):
         audio_enhancement: str | None = Form(None),
         output_audio_source: str | None = Form(None),
         vad_audio_source: str | None = Form(None),
+        service_config: str | None = Form(None),
     ) -> dict:
         feature_overrides = _parse_enabled_features(enabled_features)
         profile = _parse_audio_profile(audio_profile)
@@ -55,6 +56,7 @@ def create_app(service: OrchestratorService | None = None):
                 {"extracted_audio", "enhanced_audio", "enhanced_audio_or_extracted"}
             ),
         )
+        service_config_overrides = _parse_service_config(service_config)
         source_bytes = await source.read()
         try:
             # Disk writes for large uploads can be tens of MB; off-load to a
@@ -71,6 +73,7 @@ def create_app(service: OrchestratorService | None = None):
                 audio_enhancement_partial=enhancement_partial,
                 output_audio_source=out_audio,
                 vad_audio_source=vad_audio,
+                service_config=service_config_overrides,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -209,10 +212,10 @@ def _parse_audio_enhancement_json(raw: str | None) -> dict[str, object] | None:
     if not text:
         return None
     try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError as exc:
         from fastapi import HTTPException
 
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
         raise HTTPException(
             status_code=400,
             detail=f"audio_enhancement must be a JSON object: {exc.msg}",
@@ -231,3 +234,45 @@ def _parse_audio_enhancement_json(raw: str | None) -> dict[str, object] | None:
 
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return coerced or None
+
+
+def _parse_service_config(raw: str | None) -> dict[str, dict[str, object]] | None:
+    if raw is None:
+        return None
+    text = raw.strip()
+    if not text:
+        return None
+    try:
+        from fastapi import HTTPException
+
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"service_config must be a JSON object: {exc.msg}",
+        ) from exc
+    if not isinstance(parsed, dict):
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=400,
+            detail="service_config must be a JSON object keyed by step ID.",
+        )
+    coerced: dict[str, dict[str, object]] = {}
+    for key, value in parsed.items():
+        if not isinstance(key, str):
+            from fastapi import HTTPException
+
+            raise HTTPException(
+                status_code=400,
+                detail="service_config keys must be strings.",
+            )
+        if not isinstance(value, dict):
+            from fastapi import HTTPException
+
+            raise HTTPException(
+                status_code=400,
+                detail="service_config values must be JSON objects.",
+            )
+        coerced[key] = dict(value)
+    return coerced

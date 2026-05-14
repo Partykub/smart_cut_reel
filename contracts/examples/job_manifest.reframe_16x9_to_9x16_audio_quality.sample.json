@@ -70,8 +70,22 @@
             "model": "medium",
             "language": "auto",
             "compute_type": "int8",
-            "filler_words_th": ["เอ่อ", "อืม", "อ่า", "อ่ะ", "เอ้อ"],
-            "filler_words_en": ["um", "uh", "uhh", "uhm", "ah", "er", "erm"],
+            "filler_words_th": [
+                "เอ่อ",
+                "อืม",
+                "อ่า",
+                "อ่ะ",
+                "เอ้อ"
+            ],
+            "filler_words_en": [
+                "um",
+                "uh",
+                "uhh",
+                "uhm",
+                "ah",
+                "er",
+                "erm"
+            ],
             "filler_min_silence_around_seconds": 0.05
         },
         "dead_air_cut_planning": {
@@ -88,12 +102,15 @@
             "sample_every_n_source_frames": 1
         },
         "body_detection": {
+            "face_detector_backend": "retinaface",
             "subject_selection_strategy": "nearest_previous_crop_center",
             "min_confidence": 0.9,
             "model_path": "yolov8m.pt",
             "device_preference": "gpu_first",
             "image_size": 640,
-            "person_class_id": 0
+            "person_class_id": 0,
+            "face_min_confidence": 0.6,
+            "face_recognition_model": "hog"
         },
         "track_interpolation": {
             "max_gap_fill_seconds": 1.0,
@@ -102,7 +119,8 @@
         },
         "reframe_planning": {
             "framing_mode": "center_subject",
-            "clamp_to_source": true
+            "clamp_to_source": true,
+            "face_hint_dead_zone_px": 48
         },
         "easing_smoothing": {
             "smoothing_method": "exponential",

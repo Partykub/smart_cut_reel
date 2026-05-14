@@ -197,6 +197,13 @@
                     "type": "object",
                     "additionalProperties": false,
                     "properties": {
+                        "face_detector_backend": {
+                            "type": "string",
+                            "enum": [
+                                "retinaface",
+                                "face_recognition"
+                            ]
+                        },
                         "subject_selection_strategy": {
                             "type": "string",
                             "enum": [
@@ -228,6 +235,18 @@
                         "person_class_id": {
                             "type": "integer",
                             "minimum": 0
+                        },
+                        "face_min_confidence": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                        },
+                        "face_recognition_model": {
+                            "type": "string",
+                            "enum": [
+                                "hog",
+                                "cnn"
+                            ]
                         }
                     }
                 },
@@ -266,11 +285,50 @@
                             "type": "string",
                             "enum": [
                                 "center_subject",
-                                "rule_of_thirds"
+                                "rule_of_thirds",
+                                "stable_speaker"
                             ]
                         },
                         "clamp_to_source": {
                             "type": "boolean"
+                        },
+                        "face_hint_strength": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                        },
+                        "face_hint_max_ratio": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                        },
+                        "face_hint_dead_zone_px": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "face_hint_smoothing_strength": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                        },
+                        "stable_zone_trigger_ratio": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                        },
+                        "stable_zone_release_ratio": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                        },
+                        "stable_zone_offset_ratio": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                        },
+                        "stable_hold_seconds": {
+                            "type": "number",
+                            "minimum": 0
                         }
                     }
                 },

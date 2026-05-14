@@ -37,6 +37,7 @@ class TrackInterpolationService:
             "coordinate_space": raw_payload.get("coordinate_space", "source"),
             "source_resolution": raw_payload.get("source_resolution"),
             "proxy_resolution": raw_payload.get("proxy_resolution"),
+            "face_detector_backend": raw_payload.get("face_detector_backend"),
             "missing_strategy": config["missing_strategy"],
             "interpolation_stats": stats,
             "tracks": interpolated_tracks,
@@ -240,6 +241,8 @@ def _interpolate_track(
         key: round(_lerp(previous_track["bbox"][key], next_track["bbox"][key], clamped_ratio), 2)
         for key in ("x", "y", "w", "h")
     }
+    interpolated["body_bbox"] = _interpolate_optional_bbox(previous_track, next_track, clamped_ratio, "body_bbox")
+    interpolated["face_bbox"] = _interpolate_optional_bbox(previous_track, next_track, clamped_ratio, "face_bbox")
     interpolated["confidence"] = round(
         _lerp(float(previous_track.get("confidence", 0.0)), float(next_track.get("confidence", 0.0)), clamped_ratio),
         4,
@@ -275,6 +278,8 @@ def _clone_track(source_track: dict[str, Any], target_track: dict[str, Any]) -> 
     cloned = dict(target_track)
     cloned["center"] = dict(source_track["center"])
     cloned["bbox"] = dict(source_track["bbox"])
+    cloned["body_bbox"] = dict(source_track["body_bbox"]) if isinstance(source_track.get("body_bbox"), dict) else None
+    cloned["face_bbox"] = dict(source_track["face_bbox"]) if isinstance(source_track.get("face_bbox"), dict) else None
     cloned["confidence"] = source_track.get("confidence", 0.0)
     return cloned
 
@@ -291,8 +296,26 @@ def _center_fallback_track(track: dict[str, Any], source_center: dict[str, float
         "w": width,
         "h": height,
     }
+    fallback["body_bbox"] = None
+    fallback["face_bbox"] = None
     fallback["confidence"] = 0.0
     return fallback
+
+
+def _interpolate_optional_bbox(
+    previous_track: dict[str, Any],
+    next_track: dict[str, Any],
+    ratio: float,
+    key: str,
+) -> dict[str, float] | None:
+    previous_bbox = previous_track.get(key)
+    next_bbox = next_track.get(key)
+    if not isinstance(previous_bbox, dict) or not isinstance(next_bbox, dict):
+        return None
+    return {
+        axis: round(_lerp(float(previous_bbox[axis]), float(next_bbox[axis]), ratio), 2)
+        for axis in ("x", "y", "w", "h")
+    }
 
 
 def _center_distance(previous_track: dict[str, Any], current_track: dict[str, Any]) -> float:

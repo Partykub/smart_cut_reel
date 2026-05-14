@@ -87,7 +87,29 @@ export BODY_DETECTION_YOLO_MODEL='yolov8m.pt'
 
 If `ORCHESTRATOR_SERVICE_ENDPOINTS` is not set, the API keeps using `MockPipelineRunner` so local development still works before every downstream service exists.
 
-`services/body_detection/` now expects Ultralytics YOLO weights. By default it uses `yolov8m.pt`, prefers CUDA when available, and falls back to CPU automatically. Set `BODY_DETECTION_YOLO_MODEL` or `job_manifest.service_config.body_detection.model_path` to a local weights path if you do not want runtime downloads.
+`services/body_detection/` now runs as a two-stage detector: Ultralytics YOLO first finds the active body ROI, then a face detector runs inside that crop. By default the face backend is `retinaface`; the frontend can switch to `face_recognition` for comparison.
+
+YOLO still uses `yolov8m.pt`, prefers CUDA when available, and falls back to CPU automatically. Set `BODY_DETECTION_YOLO_MODEL` or `job_manifest.service_config.body_detection.model_path` to a local weights path if you do not want runtime downloads.
+
+Relevant body-detection config keys under `job_manifest.service_config.body_detection`:
+
+- `face_detector_backend`: `retinaface` or `face_recognition`
+- `face_min_confidence`: minimum score for RetinaFace detections
+- `face_recognition_model`: `hog` or `cnn`
+
+Relevant reframe-planning config keys under `job_manifest.service_config.reframe_planning`:
+
+- `framing_mode`: `center_subject` keeps the crop anchored to the detected subject center
+- `face_hint_dead_zone_px`: ignore small center changes below this threshold and keep the previous anchor
+
+Current local defaults used by the frontend/templates are `framing_mode = center_subject` and `face_hint_dead_zone_px = 48`.
+
+When face detection succeeds, downstream tracks use the face-centered box. If face detection misses a frame, the service falls back to the selected body box for that frame; if body detection also misses, it falls back to the centered track behavior that already existed.
+
+Notes:
+- `retinaface` is the recommended default for production reframing quality.
+- With the current `retina-face` package line in this repo, TensorFlow 2.21 also requires `tf-keras`. Installing from `requirements.txt` covers this automatically.
+- `face_recognition` usually needs heavier native dependencies through `dlib`, so installation is more environment-sensitive.
 
 ### Run the full HTTP pipeline locally (real `final_9x16.mp4`)
 
@@ -98,6 +120,8 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ./scripts/start_local_stack.sh
 ```
+
+If you pull new dependency changes after the venv already exists, rerun `.venv/bin/pip install -r requirements.txt` and restart the local stack before creating a new job.
 
 This starts every microservice (Phase 1 ports `8010–8018` + Phase 2 ports `8019–8021` + Phase 3 ports `8022–8023`) and the orchestrator on **`http://127.0.0.1:8000`**, using `SMART_CUT_OBJECT_STORE_ROOT` (default: `.orchestrator-data/` under the repo). Press **Ctrl+C** to stop every process.
 
@@ -137,6 +161,7 @@ curl -F "source=@clip.mp4" -F "pipeline_id=reframe_16x9_to_9x16_audio_quality" h
 Background mode:
 
 ```bash
+.venv/bin/pip install -r requirements.txt
 ./scripts/start_local_stack.sh --detach
 ./scripts/stop_local_stack.sh
 ```

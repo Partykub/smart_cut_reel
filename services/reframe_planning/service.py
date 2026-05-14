@@ -43,6 +43,14 @@ class ReframePlanningService:
             source_height=source_height,
             framing_mode=str(config["framing_mode"]),
             clamp_to_source=bool(config["clamp_to_source"]),
+            face_hint_strength=float(config["face_hint_strength"]),
+            face_hint_max_ratio=float(config["face_hint_max_ratio"]),
+            face_hint_dead_zone_px=float(config["face_hint_dead_zone_px"]),
+            face_hint_smoothing_strength=float(config["face_hint_smoothing_strength"]),
+            stable_zone_trigger_ratio=float(config["stable_zone_trigger_ratio"]),
+            stable_zone_release_ratio=float(config["stable_zone_release_ratio"]),
+            stable_zone_offset_ratio=float(config["stable_zone_offset_ratio"]),
+            stable_hold_seconds=float(config["stable_hold_seconds"]),
         )
 
         payload = {
@@ -53,6 +61,14 @@ class ReframePlanningService:
             "crop_height": crop_height,
             "source_resolution": {"width": source_width, "height": source_height},
             "target_resolution": metadata.get("target_resolution"),
+            "face_hint_strength": float(config["face_hint_strength"]),
+            "face_hint_max_ratio": float(config["face_hint_max_ratio"]),
+            "face_hint_dead_zone_px": float(config["face_hint_dead_zone_px"]),
+            "face_hint_smoothing_strength": float(config["face_hint_smoothing_strength"]),
+            "stable_zone_trigger_ratio": float(config["stable_zone_trigger_ratio"]),
+            "stable_zone_release_ratio": float(config["stable_zone_release_ratio"]),
+            "stable_zone_offset_ratio": float(config["stable_zone_offset_ratio"]),
+            "stable_hold_seconds": float(config["stable_hold_seconds"]),
             "keyframes": keyframes,
         }
 
@@ -70,6 +86,14 @@ class ReframePlanningService:
         defaults = {
             "framing_mode": "center_subject",
             "clamp_to_source": True,
+            "face_hint_strength": 0.18,
+            "face_hint_max_ratio": 0.1,
+            "face_hint_dead_zone_px": 48.0,
+            "face_hint_smoothing_strength": 0.9,
+            "stable_zone_trigger_ratio": 0.12,
+            "stable_zone_release_ratio": 0.05,
+            "stable_zone_offset_ratio": 0.35,
+            "stable_hold_seconds": 0.75,
         }
         defaults.update(context.request.config)
         return defaults
@@ -84,15 +108,38 @@ def build_reframe_keyframes(
     source_height: int,
     framing_mode: str,
     clamp_to_source: bool,
+    face_hint_strength: float,
+    face_hint_max_ratio: float,
+    face_hint_dead_zone_px: float,
+    face_hint_smoothing_strength: float,
+    stable_zone_trigger_ratio: float,
+    stable_zone_release_ratio: float,
+    stable_zone_offset_ratio: float,
+    stable_hold_seconds: float,
 ) -> list[dict[str, Any]]:
     del framing_mode
+    del face_hint_strength
+    del face_hint_max_ratio
+    del face_hint_smoothing_strength
+    del stable_zone_trigger_ratio
+    del stable_zone_release_ratio
+    del stable_zone_offset_ratio
+    del stable_hold_seconds
+
     keyframes: list[dict[str, Any]] = []
     max_x = max(0, source_width - crop_width)
     max_y = max(0, source_height - crop_height)
+    last_anchor_center_x: float | None = None
 
     for track in tracks:
-        center = track.get("center") or {}
-        center_x = float(center.get("x") or 0.0)
+        raw_center_x = _face_anchor_center_x(track)
+        if last_anchor_center_x is None:
+            center_x = raw_center_x
+        elif abs(raw_center_x - last_anchor_center_x) <= max(0.0, face_hint_dead_zone_px):
+            center_x = last_anchor_center_x
+        else:
+            center_x = raw_center_x
+        last_anchor_center_x = center_x
         target_x = center_x - (crop_width / 2.0)
         if clamp_to_source:
             target_x = min(max(0.0, target_x), float(max_x))
@@ -107,6 +154,10 @@ def build_reframe_keyframes(
                 "x": round(target_x, 2),
                 "y": round(target_y, 2),
                 "center_x": round(center_x, 2),
+                "anchor_center_x": round(raw_center_x, 2),
+                "face_offset_x": 0.0,
+                "face_offset_smoothed_x": 0.0,
+                "stable_zone": "face_anchor",
                 "confidence": round(float(track.get("confidence") or 0.0), 4),
                 "source": track.get("source", "unknown"),
                 "interpolated": bool(track.get("interpolated")),
@@ -114,3 +165,8 @@ def build_reframe_keyframes(
         )
 
     return keyframes
+
+
+def _face_anchor_center_x(track: dict[str, Any]) -> float:
+    center = track.get("center") or {}
+    return float(center.get("x") or 0.0)

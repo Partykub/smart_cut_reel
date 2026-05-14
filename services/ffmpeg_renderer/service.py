@@ -150,6 +150,7 @@ class FFmpegRendererService:
                 plan=plan,
                 raw_tracks=raw_tracks,
                 source_bytes=source_bytes,
+                ffmpeg_config=ffmpeg_config,
             )
 
             output_bytes = out_path.read_bytes()
@@ -170,6 +171,12 @@ class FFmpegRendererService:
             "audio_codec": "aac",
             "audio_transition": "crossfade",
             "audio_transition_seconds": 0.02,
+            "overlay_max_width": 960,
+            "overlay_max_height": 540,
+            "overlay_fps_cap": 15.0,
+            "overlay_video_codec": "libx264",
+            "overlay_preset": "ultrafast",
+            "overlay_crf": 32,
         }
         defaults.update(context.request.config)
         return defaults
@@ -717,6 +724,7 @@ class FFmpegRendererService:
         plan: dict[str, Any],
         raw_tracks: dict[str, Any],
         source_bytes: bytes,
+        ffmpeg_config: dict[str, Any],
     ) -> None:
         capture = cv2.VideoCapture(str(src_path))
         if not capture.isOpened():
@@ -732,12 +740,23 @@ class FFmpegRendererService:
             capture.release()
             raise ValueError("source video has invalid fps for overlay rendering")
 
+        overlay_width, overlay_height, overlay_fps, frame_stride = _overlay_render_spec(
+            frame_width=frame_width,
+            frame_height=frame_height,
+            fps=fps,
+            max_width=int(ffmpeg_config.get("overlay_max_width") or 0),
+            max_height=int(ffmpeg_config.get("overlay_max_height") or 0),
+            fps_cap=float(ffmpeg_config.get("overlay_fps_cap") or 0.0),
+        )
+        scale_x = overlay_width / frame_width
+        scale_y = overlay_height / frame_height
+
         temp_video_path = out_path.with_suffix(".video.mp4")
         writer = cv2.VideoWriter(
             str(temp_video_path),
             cv2.VideoWriter_fourcc(*"mp4v"),
-            fps,
-            (frame_width, frame_height),
+            overlay_fps,
+            (overlay_width, overlay_height),
         )
         if not writer.isOpened():
             capture.release()
@@ -766,6 +785,10 @@ class FFmpegRendererService:
                 break
 
             current_t = frame_index / fps
+            if frame_index % frame_stride != 0:
+                frame_index += 1
+                continue
+
             track = self._track_for_time(tracks, track_times, current_t)
             crop_box = self._crop_box_for_time(
                 keyframes=sorted_keyframes,
@@ -776,8 +799,24 @@ class FFmpegRendererService:
                 frame_height=frame_height,
             )
 
-            self._draw_overlay(frame, track=track, crop_box=crop_box)
-            writer.write(frame)
+            if overlay_width != frame_width or overlay_height != frame_height:
+                overlay_frame = cv2.resize(
+                    frame,
+                    (overlay_width, overlay_height),
+                    interpolation=cv2.INTER_AREA,
+                )
+            else:
+                overlay_frame = frame
+
+            scaled_track = _scale_track_for_overlay(track, scale_x=scale_x, scale_y=scale_y)
+            scaled_crop_box = _scale_crop_box_for_overlay(
+                crop_box,
+                scale_x=scale_x,
+                scale_y=scale_y,
+            )
+
+            self._draw_overlay(overlay_frame, track=scaled_track, crop_box=scaled_crop_box)
+            writer.write(overlay_frame)
             frame_index += 1
 
         capture.release()
@@ -790,6 +829,7 @@ class FFmpegRendererService:
             audio_policy=str(plan.get("audio_policy") or "copy_if_possible_else_aac"),
             audio_codec="aac",
             probe=probe_video_bytes(source_bytes),
+            ffmpeg_config=ffmpeg_config,
         )
 
     def _encode_overlay_for_web(
@@ -801,6 +841,7 @@ class FFmpegRendererService:
         audio_policy: str,
         audio_codec: str,
         probe: dict[str, Any],
+        ffmpeg_config: dict[str, Any],
     ) -> None:
         cmd: list[str] = [
             "ffmpeg",
@@ -824,11 +865,11 @@ class FFmpegRendererService:
 
         cmd.extend([
             "-c:v",
-            "libx264",
+            str(ffmpeg_config.get("overlay_video_codec") or "libx264"),
             "-preset",
-            "fast",
+            str(ffmpeg_config.get("overlay_preset") or "ultrafast"),
             "-crf",
-            "23",
+            str(int(ffmpeg_config.get("overlay_crf") or 32)),
             "-pix_fmt",
             "yuv420p",
             "-movflags",
@@ -902,12 +943,30 @@ class FFmpegRendererService:
             return
 
         bbox = track.get("bbox") or {}
+        body_bbox = track.get("body_bbox") or {}
+        face_bbox = track.get("face_bbox") or {}
         x = int(round(float(bbox.get("x") or 0.0)))
         y = int(round(float(bbox.get("y") or 0.0)))
         width = int(round(float(bbox.get("w") or 0.0)))
         height = int(round(float(bbox.get("h") or 0.0)))
         if width <= 0 or height <= 0:
             return
+
+        body_x = int(round(float(body_bbox.get("x") or 0.0)))
+        body_y = int(round(float(body_bbox.get("y") or 0.0)))
+        body_width = int(round(float(body_bbox.get("w") or 0.0)))
+        body_height = int(round(float(body_bbox.get("h") or 0.0)))
+        if body_width > 0 and body_height > 0:
+            cv2.rectangle(frame, (body_x, body_y), (body_x + body_width, body_y + body_height), (80, 220, 100), line_thickness)
+            self._draw_label(frame, "body roi", body_x, max(24, body_y - 10), (80, 220, 100))
+
+        face_x = int(round(float(face_bbox.get("x") or 0.0)))
+        face_y = int(round(float(face_bbox.get("y") or 0.0)))
+        face_width = int(round(float(face_bbox.get("w") or 0.0)))
+        face_height = int(round(float(face_bbox.get("h") or 0.0)))
+        if face_width > 0 and face_height > 0:
+            cv2.rectangle(frame, (face_x, face_y), (face_x + face_width, face_y + face_height), (255, 210, 80), line_thickness)
+            self._draw_label(frame, "face bbox", face_x, max(24, face_y - 10), (255, 210, 80))
 
         cv2.rectangle(frame, (x, y), (x + width, y + height), (80, 220, 100), line_thickness)
         label = str(track.get("source") or "person")
@@ -990,6 +1049,83 @@ class FFmpegRendererService:
         if completed.returncode != 0:
             detail = completed.stderr.strip() or completed.stdout.strip() or "ffmpeg failed"
             raise ValueError(detail)
+
+
+def _overlay_render_spec(
+    *,
+    frame_width: int,
+    frame_height: int,
+    fps: float,
+    max_width: int,
+    max_height: int,
+    fps_cap: float,
+) -> tuple[int, int, float, int]:
+    if frame_width <= 0 or frame_height <= 0 or fps <= 0:
+        raise ValueError("overlay render spec requires positive dimensions and fps")
+
+    width_limit = max_width if max_width > 0 else frame_width
+    height_limit = max_height if max_height > 0 else frame_height
+    scale = min(width_limit / frame_width, height_limit / frame_height, 1.0)
+
+    overlay_width = _even_dimension(int(round(frame_width * scale)))
+    overlay_height = _even_dimension(int(round(frame_height * scale)))
+
+    capped_fps = min(fps, fps_cap) if fps_cap > 0 else fps
+    frame_stride = max(1, int(round(fps / max(capped_fps, 1e-6))))
+    overlay_fps = fps / frame_stride
+    return overlay_width, overlay_height, overlay_fps, frame_stride
+
+
+def _scale_crop_box_for_overlay(
+    crop_box: tuple[int, int, int, int],
+    *,
+    scale_x: float,
+    scale_y: float,
+) -> tuple[int, int, int, int]:
+    crop_x, crop_y, crop_width, crop_height = crop_box
+    return (
+        int(round(crop_x * scale_x)),
+        int(round(crop_y * scale_y)),
+        max(1, int(round(crop_width * scale_x))),
+        max(1, int(round(crop_height * scale_y))),
+    )
+
+
+def _scale_track_for_overlay(
+    track: dict[str, Any] | None,
+    *,
+    scale_x: float,
+    scale_y: float,
+) -> dict[str, Any] | None:
+    if track is None:
+        return None
+
+    scaled_track = dict(track)
+    bbox = track.get("bbox")
+    if isinstance(bbox, dict):
+        scaled_track["bbox"] = {
+            "x": round(float(bbox.get("x") or 0.0) * scale_x, 2),
+            "y": round(float(bbox.get("y") or 0.0) * scale_y, 2),
+            "w": round(float(bbox.get("w") or 0.0) * scale_x, 2),
+            "h": round(float(bbox.get("h") or 0.0) * scale_y, 2),
+        }
+    body_bbox = track.get("body_bbox")
+    if isinstance(body_bbox, dict):
+        scaled_track["body_bbox"] = {
+            "x": round(float(body_bbox.get("x") or 0.0) * scale_x, 2),
+            "y": round(float(body_bbox.get("y") or 0.0) * scale_y, 2),
+            "w": round(float(body_bbox.get("w") or 0.0) * scale_x, 2),
+            "h": round(float(body_bbox.get("h") or 0.0) * scale_y, 2),
+        }
+    face_bbox = track.get("face_bbox")
+    if isinstance(face_bbox, dict):
+        scaled_track["face_bbox"] = {
+            "x": round(float(face_bbox.get("x") or 0.0) * scale_x, 2),
+            "y": round(float(face_bbox.get("y") or 0.0) * scale_y, 2),
+            "w": round(float(face_bbox.get("w") or 0.0) * scale_x, 2),
+            "h": round(float(face_bbox.get("h") or 0.0) * scale_y, 2),
+        }
+    return scaled_track
 
 
 def _windows_from_segment_keyframes(

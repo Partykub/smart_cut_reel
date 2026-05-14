@@ -18,6 +18,8 @@ type ToggleState = {
   removeFillerWords: boolean;
 };
 
+type FaceDetectorBackend = "retinaface" | "face_recognition";
+
 function selectPipelineId(state: ToggleState): PipelineId {
   if (state.removeFillerWords) {
     return PIPELINE_ID_REFRAME_AUDIO_QUALITY;
@@ -62,6 +64,18 @@ function buildDenoisePartial(
   return { denoise_model: "off" };
 }
 
+function buildServiceConfig(faceDetectorBackend: FaceDetectorBackend): Record<string, object> {
+  return {
+    body_detection: {
+      face_detector_backend: faceDetectorBackend,
+    },
+    reframe_planning: {
+      framing_mode: "center_subject",
+      face_hint_dead_zone_px: 48,
+    },
+  };
+}
+
 const ACCENT_RING: Record<PresetInfo["accent"], string> = {
   emerald: "ring-emerald-500/35 border-emerald-500/25",
   violet: "ring-violet-500/35 border-violet-500/25",
@@ -77,6 +91,7 @@ const ACCENT_DOT: Record<PresetInfo["accent"], string> = {
 export function UploadForm() {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
+  const [faceDetectorBackend, setFaceDetectorBackend] = useState<FaceDetectorBackend>("retinaface");
   const [removeDeadAir, setRemoveDeadAir] = useState(true);
   const [removeFillerWords, setRemoveFillerWords] = useState(false);
   const [audioProfile, setAudioProfile] = useState<AudioProfileId>("original");
@@ -94,6 +109,7 @@ export function UploadForm() {
 
   const pipelineId = selectPipelineId(toggleState);
   const enabledFeatures = buildEnabledFeatures(toggleState);
+  const serviceConfig = buildServiceConfig(faceDetectorBackend);
   const preset = PRESET_INFO[pipelineId];
 
   const pickSoundStyle = (value: AudioProfileId) => {
@@ -121,6 +137,7 @@ export function UploadForm() {
         if (denoisePartial) {
           formData.append("audio_enhancement", JSON.stringify(denoisePartial));
         }
+        formData.append("service_config", JSON.stringify(serviceConfig));
         const result = await createJob(formData);
         router.push(`/jobs/${result.job_id}`);
       } catch (err) {
@@ -212,11 +229,10 @@ export function UploadForm() {
           {SOUND_OUTPUT_STYLE_OPTIONS.map((opt) => (
             <label
               key={opt.value}
-              className={`flex cursor-pointer gap-3 rounded-lg border px-3 py-2.5 text-sm transition ${
-                audioProfile === opt.value
+              className={`flex cursor-pointer gap-3 rounded-lg border px-3 py-2.5 text-sm transition ${audioProfile === opt.value
                   ? "border-emerald-500/50 bg-emerald-950/20 text-zinc-100"
                   : "border-zinc-800/80 bg-zinc-950/40 text-zinc-400 hover:border-zinc-700"
-              }`}
+                }`}
             >
               <input
                 type="radio"
@@ -281,6 +297,52 @@ export function UploadForm() {
         />
       </fieldset>
 
+      <fieldset className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-950/35 p-5">
+        <legend className="px-1 font-display text-sm font-semibold text-zinc-200">
+          Face detection backend
+        </legend>
+        <p className="text-xs leading-relaxed text-zinc-500">
+          YOLO body detection still runs first to find the subject ROI. This setting chooses which
+          face detector will run inside that body crop.
+        </p>
+
+        <label className="flex items-start gap-3 text-sm text-zinc-200">
+          <input
+            type="radio"
+            name="face-detector-backend"
+            value="retinaface"
+            checked={faceDetectorBackend === "retinaface"}
+            disabled={isPending}
+            onChange={() => setFaceDetectorBackend("retinaface")}
+            className="mt-1 h-4 w-4 border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500"
+          />
+          <span className="space-y-1">
+            <span className="block font-medium text-zinc-100">RetinaFace</span>
+            <span className="block text-xs leading-relaxed text-zinc-400">
+              Recommended default for production reframing. Better at small or angled faces.
+            </span>
+          </span>
+        </label>
+
+        <label className="flex items-start gap-3 text-sm text-zinc-200">
+          <input
+            type="radio"
+            name="face-detector-backend"
+            value="face_recognition"
+            checked={faceDetectorBackend === "face_recognition"}
+            disabled={isPending}
+            onChange={() => setFaceDetectorBackend("face_recognition")}
+            className="mt-1 h-4 w-4 border-zinc-600 bg-zinc-800 text-violet-400 focus:ring-violet-500"
+          />
+          <span className="space-y-1">
+            <span className="block font-medium text-zinc-100">face_recognition</span>
+            <span className="block text-xs leading-relaxed text-zinc-400">
+              Alternate backend for comparison. Usually slower and heavier to package.
+            </span>
+          </span>
+        </label>
+      </fieldset>
+
       <details className="rounded-lg border border-zinc-800/80 bg-zinc-950/25 px-4 py-3 text-xs text-zinc-500">
         <summary className="cursor-pointer select-none font-medium text-zinc-400">
           Debug · API payload preview
@@ -303,6 +365,10 @@ export function UploadForm() {
             <dd className="break-all text-zinc-400">
               {denoisePartial ? JSON.stringify(denoisePartial) : "(not sent)"}
             </dd>
+          </div>
+          <div>
+            <dt className="text-zinc-600">service_config</dt>
+            <dd className="break-all text-zinc-400">{JSON.stringify(serviceConfig)}</dd>
           </div>
         </dl>
       </details>
@@ -348,9 +414,8 @@ function ToggleRow({
 }: ToggleRowProps) {
   return (
     <label
-      className={`flex cursor-pointer items-start gap-3 text-sm text-zinc-200 ${
-        disabled ? "opacity-70" : ""
-      }`}
+      className={`flex cursor-pointer items-start gap-3 text-sm text-zinc-200 ${disabled ? "opacity-70" : ""
+        }`}
     >
       <input
         type="checkbox"

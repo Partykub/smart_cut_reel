@@ -382,7 +382,58 @@ class OrchestratorApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("enabled_features", response.json()["detail"])
 
-    def test_run_job_with_dead_air_preset_marks_all_thirteen_steps_complete(self) -> None:
+    def test_create_job_merges_service_config_overrides(self) -> None:
+        response = self.client.post(
+            "/jobs",
+            files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
+            data={
+                "created_by": "debug_frontend",
+                "service_config": json.dumps(
+                    {
+                        "body_detection": {
+                            "face_detector_backend": "retinaface",
+                            "face_min_confidence": 0.6,
+                        }
+                    }
+                ),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        manifest = self.service.manifest_manager.read_job_manifest(payload["job_id"])
+        body_detection_config = manifest["service_config"]["body_detection"]
+        self.assertEqual(body_detection_config["face_detector_backend"], "retinaface")
+        self.assertEqual(body_detection_config["face_min_confidence"], 0.6)
+        self.assertEqual(body_detection_config["model_path"], "yolov8m.pt")
+
+    def test_create_job_rejects_invalid_service_config_json(self) -> None:
+        response = self.client.post(
+            "/jobs",
+            files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
+            data={
+                "created_by": "debug_frontend",
+                "service_config": "not-json",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("service_config", response.json()["detail"])
+
+    def test_create_job_rejects_non_object_service_config_values(self) -> None:
+        response = self.client.post(
+            "/jobs",
+            files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
+            data={
+                "created_by": "debug_frontend",
+                "service_config": json.dumps({"body_detection": True}),
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("service_config values", response.json()["detail"])
+
+    def test_run_job_with_dead_air_preset_marks_all_steps_complete(self) -> None:
         created = self.client.post(
             "/jobs",
             files={"source": ("clip.mp4", b"video-bytes", "video/mp4")},
