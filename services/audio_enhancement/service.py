@@ -189,18 +189,16 @@ def _run_ffmpeg_chain(
     config: dict[str, Any],
 ) -> tuple[bytes, dict[str, float | None]]:
     filter_chain = _build_filter_chain(config)
-    with (
-        tempfile.NamedTemporaryFile(suffix=".wav") as src_handle,
-        tempfile.NamedTemporaryFile(suffix=".wav") as dst_handle,
-    ):
-        src_handle.write(source_bytes)
-        src_handle.flush()
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        src = Path(tmp_dir) / "input.wav"
+        dst = Path(tmp_dir) / "output.wav"
+        src.write_bytes(source_bytes)
 
         cmd = [
             "ffmpeg",
             "-y",
             "-i",
-            str(src_handle.name),
+            str(src),
             "-af",
             filter_chain,
             "-ac",
@@ -211,7 +209,7 @@ def _run_ffmpeg_chain(
             "pcm_s16le",
             "-f",
             "wav",
-            str(dst_handle.name),
+            str(dst),
         ]
         completed = subprocess.run(cmd, check=False, capture_output=True, text=True)
         if completed.returncode != 0:
@@ -219,7 +217,7 @@ def _run_ffmpeg_chain(
             raise _FfmpegFilterError(detail)
 
         loudness = _parse_loudnorm_metrics(completed.stderr)
-        return Path(dst_handle.name).read_bytes(), loudness
+        return dst.read_bytes(), loudness
 
 
 def _build_filter_chain(config: dict[str, Any]) -> str:

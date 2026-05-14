@@ -37,29 +37,27 @@ def run_ffprobe(file_path: Path) -> dict[str, Any]:
 
 
 def probe_video_bytes(data: bytes, suffix: str = ".mp4") -> dict[str, Any]:
-    with tempfile.NamedTemporaryFile(suffix=suffix) as handle:
-        handle.write(data)
-        handle.flush()
-        return run_ffprobe(Path(handle.name))
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        src = Path(tmp_dir) / f"input{suffix}"
+        src.write_bytes(data)
+        return run_ffprobe(src)
 
 
 def build_proxy_video_bytes(data: bytes, *, proxy_height: int, suffix: str = ".mp4") -> bytes:
     if proxy_height <= 0:
         raise ValueError("proxy_height must be greater than zero")
 
-    with (
-        tempfile.NamedTemporaryFile(suffix=suffix) as input_handle,
-        tempfile.NamedTemporaryFile(suffix=".mp4") as output_handle,
-    ):
-        input_handle.write(data)
-        input_handle.flush()
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        src = Path(tmp_dir) / f"input{suffix}"
+        dst = Path(tmp_dir) / "proxy.mp4"
+        src.write_bytes(data)
 
         completed = subprocess.run(
             [
                 "ffmpeg",
                 "-y",
                 "-i",
-                str(input_handle.name),
+                str(src),
                 "-vf",
                 f"scale=-2:{proxy_height}",
                 "-an",
@@ -69,7 +67,7 @@ def build_proxy_video_bytes(data: bytes, *, proxy_height: int, suffix: str = ".m
                 "yuv420p",
                 "-movflags",
                 "+faststart",
-                str(output_handle.name),
+                str(dst),
             ],
             check=False,
             capture_output=True,
@@ -79,7 +77,7 @@ def build_proxy_video_bytes(data: bytes, *, proxy_height: int, suffix: str = ".m
             detail = completed.stderr.strip() or completed.stdout.strip() or "ffmpeg failed"
             raise ValueError(detail)
 
-        return Path(output_handle.name).read_bytes()
+        return dst.read_bytes()
 
 
 def find_video_stream(document: Mapping[str, Any]) -> dict[str, Any]:
