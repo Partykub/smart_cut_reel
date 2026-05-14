@@ -133,7 +133,7 @@ if (-not $env:ORCHESTRATOR_STEP_TIMEOUTS_JSON) {
         audio_enhancement        = 600
         voice_activity_detection = 600
         transcription            = 1800
-        body_detection           = 900
+        body_detection           = 1800
         proxy_frame_sampling     = 600
         ffmpeg_renderer          = 1800
     }
@@ -212,6 +212,7 @@ Write-Host "Orchestrator will call services on $Base ports $P_VALIDATION-$P_FFMP
 Start-Uvicorn 'validation'               $P_VALIDATION    'services.validation.api:create_app'
 Start-Uvicorn 'media_metadata'           $P_META          'services.media_metadata.api:create_app'
 Start-Uvicorn 'proxy_frame_sampling'     $P_PROXY         'services.proxy_frame_sampling.api:create_app'
+if (-not $env:BODY_DETECTION_DEVICE_PREFERENCE) { $env:BODY_DETECTION_DEVICE_PREFERENCE = 'cpu' }
 Start-Uvicorn 'body_detection'           $P_BODY          'services.body_detection.api:create_app'
 Start-Uvicorn 'track_interpolation'      $P_TRACK         'services.track_interpolation.api:create_app'
 Start-Uvicorn 'reframe_planning'         $P_REFRAME       'services.reframe_planning.api:create_app'

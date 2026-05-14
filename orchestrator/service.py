@@ -392,7 +392,7 @@ _DEFAULT_STEP_TIMEOUTS_SECONDS: dict[str, float] = {
     "audio_enhancement": 600.0,
     "voice_activity_detection": 600.0,
     "transcription": 1800.0,
-    "body_detection": 900.0,
+    "body_detection": 1800.0,
     "ffmpeg_renderer": 1800.0,
     "proxy_frame_sampling": 600.0,
 }

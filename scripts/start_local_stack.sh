@@ -122,7 +122,7 @@ ORCHESTRATOR_STEP_TIMEOUTS_JSON_DEFAULT='{'
 ORCHESTRATOR_STEP_TIMEOUTS_JSON_DEFAULT+='"audio_enhancement":600,'
 ORCHESTRATOR_STEP_TIMEOUTS_JSON_DEFAULT+='"voice_activity_detection":600,'
 ORCHESTRATOR_STEP_TIMEOUTS_JSON_DEFAULT+='"transcription":1800,'
-ORCHESTRATOR_STEP_TIMEOUTS_JSON_DEFAULT+='"body_detection":900,'
+ORCHESTRATOR_STEP_TIMEOUTS_JSON_DEFAULT+='"body_detection":1800,'
 ORCHESTRATOR_STEP_TIMEOUTS_JSON_DEFAULT+='"proxy_frame_sampling":600,'
 ORCHESTRATOR_STEP_TIMEOUTS_JSON_DEFAULT+='"ffmpeg_renderer":1800'
 ORCHESTRATOR_STEP_TIMEOUTS_JSON_DEFAULT+='}'
@@ -189,6 +189,7 @@ echo "Orchestrator will call services on ${BASE} ports ${P_VALIDATION}-${P_FFMPE
 start_uvicorn "validation" "${P_VALIDATION}" "services.validation.api:create_app"
 start_uvicorn "media_metadata" "${P_META}" "services.media_metadata.api:create_app"
 start_uvicorn "proxy_frame_sampling" "${P_PROXY}" "services.proxy_frame_sampling.api:create_app"
+export BODY_DETECTION_DEVICE_PREFERENCE="${BODY_DETECTION_DEVICE_PREFERENCE:-cpu}"
 start_uvicorn "body_detection" "${P_BODY}" "services.body_detection.api:create_app"
 start_uvicorn "track_interpolation" "${P_TRACK}" "services.track_interpolation.api:create_app"
 start_uvicorn "reframe_planning" "${P_REFRAME}" "services.reframe_planning.api:create_app"

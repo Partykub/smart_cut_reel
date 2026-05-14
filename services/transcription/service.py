@@ -97,13 +97,25 @@ class TranscriptionService:
         try:
             audio_bytes = context.read_bytes(audio_key)
             language = config["language"]
-            segments_payload, detected_language = _transcribe_with_faster_whisper(
-                audio_bytes=audio_bytes,
-                model_name=config["model"],
-                compute_type=config["compute_type"],
-                language=None if language == "auto" else language,
-                speech_intervals=speech_intervals,
-            )
+            _stop_heartbeat = threading.Event()
+
+            def _heartbeat_loop() -> None:
+                while not _stop_heartbeat.wait(timeout=15.0):
+                    context.heartbeat()
+
+            _hb_thread = threading.Thread(target=_heartbeat_loop, daemon=True)
+            _hb_thread.start()
+            try:
+                segments_payload, detected_language = _transcribe_with_faster_whisper(
+                    audio_bytes=audio_bytes,
+                    model_name=config["model"],
+                    compute_type=config["compute_type"],
+                    language=None if language == "auto" else language,
+                    speech_intervals=speech_intervals,
+                )
+            finally:
+                _stop_heartbeat.set()
+                _hb_thread.join(timeout=5.0)
         except Exception as exc:  # noqa: BLE001 - we want a graceful degrade
             warnings.append(
                 ServiceWarning(

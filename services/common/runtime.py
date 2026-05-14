@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field
 import os
@@ -48,9 +49,26 @@ class RunResponse:
 
 
 class ServiceContext:
-    def __init__(self, request: RunRequest, store: ObjectStore) -> None:
+    def __init__(
+        self,
+        request: RunRequest,
+        store: ObjectStore,
+        heartbeat_fn: Callable[[], None] | None = None,
+    ) -> None:
         self.request = request
         self.store = store
+        self._heartbeat_fn = heartbeat_fn
+
+    def heartbeat(self, progress: dict[str, Any] | None = None) -> None:
+        """Touch service_status.updated_at so the UI knows the service is alive.
+
+        Pass optional *progress* to surface current/total seconds to the UI.
+        """
+        if self._heartbeat_fn is not None:
+            try:
+                self._heartbeat_fn(progress)
+            except Exception:  # noqa: BLE001 - heartbeat must never crash a service
+                pass
 
     @property
     def job_id(self) -> str:
@@ -107,7 +125,15 @@ def build_object_store(bucket: str) -> ObjectStore:
 
 
 def build_context(request: RunRequest, store: ObjectStore | None = None) -> ServiceContext:
-    return ServiceContext(request=request, store=store or build_object_store(request.minio.bucket))
+    from orchestrator.manifest_manager import ManifestManager
+
+    object_store = store or build_object_store(request.minio.bucket)
+    manager = ManifestManager(object_store)
+
+    def _heartbeat(progress: dict[str, Any] | None = None) -> None:
+        manager.touch_service_status(request.job_id, progress=progress)
+
+    return ServiceContext(request=request, store=object_store, heartbeat_fn=_heartbeat)
 
 
 def _bool_env(name: str) -> bool:
