@@ -148,6 +148,11 @@
                 },
                 "finished_at": {
                     "$ref": "#/$defs/nullableDateTime"
+                },
+                "metrics": {
+                    "type": "object",
+                    "description": "Optional per-step metrics returned by the service (e.g. audio_enhancement loudness/peak fields).",
+                    "additionalProperties": true
                 }
             }
         },

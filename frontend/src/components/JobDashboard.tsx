@@ -14,6 +14,7 @@ import {
 } from "@/lib/types";
 
 import { ArtifactList } from "./ArtifactList";
+import { AudioOutputInsightPanel } from "./AudioOutputInsightPanel";
 import { CutPlanCard } from "./CutPlanCard";
 import { JobOutputPreview } from "./JobOutputPreview";
 import { RunButton } from "./RunButton";
@@ -134,6 +135,23 @@ export function JobDashboard({ jobId }: { jobId: string }) {
     Boolean(data.artifacts?.transcript) &&
     enabledFeatures.remove_filler_words === true;
 
+  const audioEnhancementStep = data.service_status?.steps?.audio_enhancement;
+  const audioStepMetrics =
+    audioEnhancementStep &&
+    typeof audioEnhancementStep === "object" &&
+    "metrics" in audioEnhancementStep &&
+    audioEnhancementStep.metrics &&
+    typeof audioEnhancementStep.metrics === "object" &&
+    !Array.isArray(audioEnhancementStep.metrics)
+      ? (audioEnhancementStep.metrics as Record<string, unknown>)
+      : null;
+  const enhancedWavApiUrl = data.artifacts?.enhanced_audio
+    ? `/api/jobs/${encodeURIComponent(jobId)}/artifacts/enhanced_audio`
+    : null;
+  const extractedWavApiUrl = data.artifacts?.extracted_audio
+    ? `/api/jobs/${encodeURIComponent(jobId)}/artifacts/extracted_audio`
+    : null;
+
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -240,6 +258,12 @@ export function JobDashboard({ jobId }: { jobId: string }) {
           downloadName={`${jobId}_final_9x16.mp4`}
         />
       ) : null}
+      <AudioOutputInsightPanel
+        jobId={jobId}
+        metrics={audioStepMetrics}
+        enhancedArtifactUrl={enhancedWavApiUrl}
+        extractedArtifactUrl={extractedWavApiUrl}
+      />
       {data.artifacts.source_overlay ? (
         <JobOutputPreview
           jobId={jobId}

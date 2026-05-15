@@ -185,8 +185,49 @@ export function buildUploadAlignedJobSummaryLines(data: JobStatusResponse): stri
     if (ae.loudness_normalization_enabled === true && ae.target_lufs != null) {
       parts.push(`Target integrated loudness (LUFS): ${String(ae.target_lufs)}`);
     }
+    if (ae.peak_force_to_window_enabled === true) {
+      parts.push(
+        "Peak-window force: on (astats −18…−14 dBFS target — may drift LUFS vs loudnorm)",
+      );
+    }
+    if (ae.peak_window_report_enabled === false) {
+      parts.push("Peak window report: off");
+    }
     if (parts.length) {
       lines.push(`Audio processing: ${parts.join(" · ")}`);
+    }
+  }
+
+  const aeMetrics = data.service_status?.steps?.audio_enhancement?.metrics;
+  if (aeMetrics && typeof aeMetrics === "object" && !Array.isArray(aeMetrics)) {
+    const m = aeMetrics as Record<string, unknown>;
+    const sub: string[] = [];
+    if (
+      typeof m.peak_sample_dbfs_pre_peak_force === "number" &&
+      typeof m.peak_sample_dbfs === "number" &&
+      Math.abs((m.peak_sample_dbfs_pre_peak_force as number) - (m.peak_sample_dbfs as number)) > 0.02
+    ) {
+      sub.push(
+        `measured peak ${(m.peak_sample_dbfs_pre_peak_force as number).toFixed(2)} → ${(m.peak_sample_dbfs as number).toFixed(2)} dBFS (astats, pre/post peak-force)`,
+      );
+    } else if (typeof m.peak_sample_dbfs === "number") {
+      sub.push(`measured peak ${(m.peak_sample_dbfs as number).toFixed(2)} dBFS (astats)`);
+    }
+    if (
+      typeof m.peak_within_window === "boolean" &&
+      typeof m.peak_level_window_low_dbfs === "number" &&
+      typeof m.peak_level_window_high_dbfs === "number"
+    ) {
+      sub.push(
+        (m.peak_within_window ? "inside" : "outside") +
+          ` ${(m.peak_level_window_low_dbfs as number).toFixed(0)}…${(m.peak_level_window_high_dbfs as number).toFixed(0)} dBFS`,
+      );
+    }
+    if (m.peak_force_applied === true) {
+      sub.push("peak force applied");
+    }
+    if (sub.length) {
+      lines.push(`Audio peak (from job): ${sub.join(" · ")}`);
     }
   }
 

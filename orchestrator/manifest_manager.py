@@ -141,6 +141,7 @@ class ManifestManager:
         finished_at: str | object = _UNSET,
         overall_status: str | None = None,
         current_step: str | None | object = _UNSET,
+        step_metrics: dict[str, Any] | object = _UNSET,
     ) -> dict[str, Any]:
         if step_id not in KNOWN_PIPELINE_STEP_IDS:
             allowed = ", ".join(KNOWN_PIPELINE_STEP_IDS)
@@ -162,6 +163,11 @@ class ManifestManager:
             status_document["status"] = overall_status
         if current_step is not _UNSET:
             status_document["current_step"] = current_step
+        if step_metrics is not _UNSET:
+            if isinstance(step_metrics, dict):
+                status_document["steps"][step_id]["metrics"] = step_metrics
+            elif step_metrics is None:
+                status_document["steps"][step_id].pop("metrics", None)
         status_document["updated_at"] = utc_now()
 
         self.write_service_status(job_id, status_document)

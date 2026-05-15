@@ -15,6 +15,11 @@ from orchestrator.object_store import FilesystemObjectStore
 from services.audio_enhancement.service import AudioEnhancementService
 from services.audio_enhancement.service import _FfmpegFilterError
 from services.audio_enhancement.service import _build_filter_chain
+from services.audio_enhancement.service import _loudnorm_pass2_linear_token
+from services.audio_enhancement.service import _parse_astats_overall_peak_db
+from services.audio_enhancement.service import _parse_loudnorm_measured_inputs
+from services.audio_enhancement.service import _parse_loudnorm_metrics
+from services.audio_enhancement.service import _peak_window_gain_db
 from services.common.runtime import RunMinIO
 from services.common.runtime import RunRequest
 from services.common.runtime import build_context
@@ -79,6 +84,15 @@ class AudioEnhancementServiceTests(unittest.TestCase):
         self.assertAlmostEqual(duration, 0.5, delta=0.05)
         self.assertEqual(response.metrics["denoise_model"], "std")
         self.assertEqual(response.metrics["target_lufs"], -16.0)
+        out_lufs = response.metrics.get("output_lufs")
+        self.assertIsNotNone(out_lufs)
+        self.assertAlmostEqual(float(out_lufs), -16.0, delta=1.5)
+        self.assertIs(response.metrics.get("loudnorm_pass2_applied"), True)
+        pre = response.metrics.get("peak_sample_dbfs_pre_peak_force")
+        post = response.metrics.get("peak_sample_dbfs")
+        self.assertIsInstance(pre, (int, float))
+        self.assertIsInstance(post, (int, float))
+        self.assertAlmostEqual(float(pre), float(post), delta=0.5)
 
     def test_passes_through_audio_when_ffmpeg_fails(self) -> None:
         service = AudioEnhancementService()
@@ -131,6 +145,70 @@ class AudioEnhancementServiceTests(unittest.TestCase):
         chain = _build_filter_chain(cfg)
         self.assertIn("highpass", chain)
         self.assertNotIn("loudnorm", chain)
+
+    def test_parse_astats_overall_peak_db_prefers_last_match(self) -> None:
+        stderr = "noise\nPeak level dB: -3.0\nOverall\nPeak level dB: -6.020865\n"
+        self.assertAlmostEqual(_parse_astats_overall_peak_db(stderr), -6.020865, places=5)
+
+    def test_peak_window_gain_db_too_hot(self) -> None:
+        self.assertAlmostEqual(
+            _peak_window_gain_db(-6.0, low_dbfs=-18.0, high_dbfs=-14.0, max_boost_db=12.0),
+            -8.0,
+        )
+
+    def test_peak_window_gain_db_too_quiet_capped(self) -> None:
+        self.assertAlmostEqual(
+            _peak_window_gain_db(-25.0, low_dbfs=-18.0, high_dbfs=-14.0, max_boost_db=12.0),
+            9.0,
+        )
+
+    def test_peak_window_gain_db_too_quiet_uncapped(self) -> None:
+        self.assertAlmostEqual(
+            _peak_window_gain_db(-50.052, low_dbfs=-18.0, high_dbfs=-14.0, max_boost_db=0.0),
+            34.052,
+            places=3,
+        )
+
+    def test_parse_loudnorm_metrics_prefers_last_json_block(self) -> None:
+        stderr = (
+            '{"input_i" : "-30.00", "output_i" : "-30.00"}\n'
+            '{\n\t"input_i" : "-24.15",\n\t"output_i" : "-22.98",\n}\n'
+        )
+        m = _parse_loudnorm_metrics(stderr)
+        self.assertAlmostEqual(m["input_lufs"], -24.15, places=2)
+        self.assertAlmostEqual(m["output_lufs"], -22.98, places=2)
+
+    def test_parse_loudnorm_measured_inputs_requires_all_fields(self) -> None:
+        stderr = '{"input_i" : "-24.15", "input_tp" : "-10.00"}\n'
+        self.assertIsNone(_parse_loudnorm_measured_inputs(stderr))
+
+    def test_parse_loudnorm_measured_inputs_last_block(self) -> None:
+        stderr = (
+            '{"input_i" : "-30.00", "input_tp" : "-12.00", "input_lra" : "1.00", '
+            '"input_thresh" : "-40.00"}\n'
+            '{\n\t"input_i" : "-24.15",\n\t"input_tp" : "-11.20",\n\t'
+            '"input_lra" : "5.50",\n\t"input_thresh" : "-34.20"\n}\n'
+        )
+        t = _parse_loudnorm_measured_inputs(stderr)
+        self.assertIsNotNone(t)
+        self.assertAlmostEqual(t[0], -24.15, places=2)
+        self.assertAlmostEqual(t[1], -11.20, places=2)
+        self.assertAlmostEqual(t[2], 5.50, places=2)
+        self.assertAlmostEqual(t[3], -34.20, places=2)
+
+    def test_parse_loudnorm_measured_inputs_bare_numbers(self) -> None:
+        stderr = '{"input_i" : -24.15, "input_tp" : -11.2, "input_lra" : 5.5, "input_thresh" : -34.2}\n'
+        t = _parse_loudnorm_measured_inputs(stderr)
+        self.assertIsNotNone(t)
+        self.assertAlmostEqual(t[0], -24.15, places=2)
+        self.assertAlmostEqual(t[2], 5.5, places=2)
+
+    def test_loudnorm_pass2_lra_at_least_measured(self) -> None:
+        cfg = {"target_lufs": -23.0, "true_peak_db": -1.5, "loudness_range": 7.0}
+        measured = (-24.0, -10.0, 12.5, -34.0)
+        tok = _loudnorm_pass2_linear_token(cfg, measured)
+        self.assertIn("LRA=12.50", tok)
+        self.assertNotIn("LRA=7.00", tok)
 
     def test_rejects_invalid_denoise_model(self) -> None:
         service = AudioEnhancementService()

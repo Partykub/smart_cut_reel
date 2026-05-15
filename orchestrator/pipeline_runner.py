@@ -11,6 +11,7 @@ from .artifact_helper import ArtifactHelper
 from .contracts import ARTIFACT_PRODUCERS
 from .contracts import REFRAME_ONLY_STEP_IDS
 from .manifest_manager import ManifestManager
+from .manifest_manager import _UNSET
 from .manifest_manager import utc_now
 from .path_resolver import artifact_path
 from .path_resolver import input_path
@@ -116,6 +117,10 @@ class HttpPipelineRunner:
                     return manifest_manager.read_service_status(job_id)
 
                 next_step = pipeline_steps[index + 1] if index + 1 < len(pipeline_steps) else None
+                raw_metrics = response_document.get("metrics")
+                step_metrics: Any = _UNSET
+                if isinstance(raw_metrics, dict):
+                    step_metrics = raw_metrics
                 manifest_manager.set_step_state(
                     job_id,
                     step_id,
@@ -123,6 +128,7 @@ class HttpPipelineRunner:
                     finished_at=utc_now(),
                     overall_status="running" if next_step is not None else "success",
                     current_step=next_step,
+                    step_metrics=step_metrics,
                 )
 
         return manifest_manager.read_service_status(job_id)

@@ -300,6 +300,11 @@ export function StatusBoard({
                     ) : null}
                   </div>
                   <p className="text-xs text-zinc-500">{STEP_LABEL[step]}</p>
+                  {step === "audio_enhancement" && state.metrics ? (
+                    <p className="mt-1 max-w-xl text-[11px] leading-snug text-zinc-400">
+                      {formatAudioEnhancementMetrics(state.metrics)}
+                    </p>
+                  ) : null}
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-3 text-xs">
@@ -391,6 +396,35 @@ function formatDuration(valueMs: number): string {
   }
 
   return `${seconds}s`;
+}
+
+function formatAudioEnhancementMetrics(metrics: Record<string, unknown>): string {
+  const parts: string[] = [];
+  const peakPre = metrics.peak_sample_dbfs_pre_peak_force;
+  const peak = metrics.peak_sample_dbfs;
+  if (typeof peakPre === "number" && typeof peak === "number" && Math.abs(peakPre - peak) > 0.02) {
+    parts.push(`Peak (astats): ${peakPre.toFixed(2)} → ${peak.toFixed(2)} dBFS`);
+  } else if (typeof peak === "number") {
+    parts.push(`Peak (astats): ${peak.toFixed(2)} dBFS`);
+  } else if (peak === null) {
+    parts.push("Peak (astats): —");
+  }
+  const low = metrics.peak_level_window_low_dbfs;
+  const high = metrics.peak_level_window_high_dbfs;
+  const within = metrics.peak_within_window;
+  if (typeof low === "number" && typeof high === "number") {
+    parts.push(`window ${low.toFixed(1)}…${high.toFixed(1)} dBFS`);
+  }
+  if (typeof within === "boolean") {
+    parts.push(within ? "inside window" : "outside window");
+  }
+  if (metrics.peak_force_applied === true) {
+    const g = metrics.peak_force_gain_db_total;
+    parts.push(
+      typeof g === "number" ? `force gain ${g.toFixed(2)} dB` : "peak force applied",
+    );
+  }
+  return parts.join(" · ");
 }
 
 function formatRelativeTime(valueMs: number): string {

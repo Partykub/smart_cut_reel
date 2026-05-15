@@ -66,6 +66,22 @@ function buildDenoisePartial(
   return { denoise_model: "off" };
 }
 
+function buildAudioEnhancementPartial(
+  profile: AudioProfileId,
+  reduceNoise: boolean,
+  forcePeakInWindow: boolean,
+): Record<string, string | boolean> | null {
+  const denoise = buildDenoisePartial(profile, reduceNoise);
+  const out: Record<string, string | boolean> = { ...(denoise ?? {}) };
+  if (forcePeakInWindow) {
+    out.peak_force_to_window_enabled = true;
+  }
+  if (Object.keys(out).length === 0) {
+    return null;
+  }
+  return out;
+}
+
 function buildServiceConfig(faceDetectorBackend: FaceDetectorBackend): Record<string, object> {
   return {
     body_detection: {
@@ -99,6 +115,7 @@ export function UploadForm() {
   const [removeFillerWords, setRemoveFillerWords] = useState(false);
   const [audioProfile, setAudioProfile] = useState<AudioProfileId>("original");
   const [reduceNoise, setReduceNoise] = useState(false);
+  const [forcePeakInWindow, setForcePeakInWindow] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -136,7 +153,11 @@ export function UploadForm() {
         formData.append("pipeline_id", pipelineId);
         formData.append("enabled_features", JSON.stringify(enabledFeatures));
         formData.append("audio_profile", audioProfile);
-        const denoisePartial = buildDenoisePartial(audioProfile, reduceNoise);
+        const denoisePartial = buildAudioEnhancementPartial(
+          audioProfile,
+          reduceNoise,
+          forcePeakInWindow,
+        );
         if (denoisePartial) {
           formData.append("audio_enhancement", JSON.stringify(denoisePartial));
         }
@@ -149,7 +170,11 @@ export function UploadForm() {
     });
   };
 
-  const denoisePartial = buildDenoisePartial(audioProfile, reduceNoise);
+  const audioEnhancementPreview = buildAudioEnhancementPartial(
+    audioProfile,
+    reduceNoise,
+    forcePeakInWindow,
+  );
 
   return (
     <form
@@ -269,6 +294,17 @@ export function UploadForm() {
             }
           />
         </div>
+
+        <div className="border-t border-zinc-800/80 pt-4">
+          <ToggleRow
+            accentClassName="text-amber-400 focus:ring-amber-500"
+            checked={forcePeakInWindow}
+            disabled={isPending}
+            onChange={(value) => setForcePeakInWindow(value)}
+            title="บังคับ peak เข้า −18…−14 dBFS (optional)"
+            subtitle="หลัง loudnorm จะปรับ volume จน astats peak อยู่ในช่วง (ไม่จำกัด boost +12 dB). LUFS อาจเพี้ยนจากเป้า loudness — ใช้เมื่อต้องการสเปก peak มากกว่า LUFS"
+          />
+        </div>
       </fieldset>
 
       <fieldset className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-950/35 p-5">
@@ -366,7 +402,7 @@ export function UploadForm() {
           <div>
             <dt className="text-zinc-600">audio_enhancement (partial)</dt>
             <dd className="break-all text-zinc-400">
-              {denoisePartial ? JSON.stringify(denoisePartial) : "(not sent)"}
+              {audioEnhancementPreview ? JSON.stringify(audioEnhancementPreview) : "(not sent)"}
             </dd>
           </div>
           <div>

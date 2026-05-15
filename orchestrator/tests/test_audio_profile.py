@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 
+from orchestrator.audio_profile import coerce_audio_enhancement_partial
 from orchestrator.audio_profile import merge_audio_enhancement_service_config
 
 
@@ -96,6 +97,31 @@ class AudioProfileMergeTests(unittest.TestCase):
     def test_unknown_profile_raises(self) -> None:
         with self.assertRaises(ValueError):
             merge_audio_enhancement_service_config({}, profile_id="made_up", partial=None)
+
+    def test_peak_window_partial_merge(self) -> None:
+        base = {
+            "denoise_model": "std",
+            "target_lufs": -16.0,
+            "true_peak_db": -1.5,
+            "loudness_range": 11.0,
+            "highpass_frequency_hz": 80.0,
+            "loudness_normalization_enabled": True,
+        }
+        merged = merge_audio_enhancement_service_config(
+            base,
+            profile_id="podcast",
+            partial={"peak_force_to_window_enabled": True},
+        )
+        self.assertTrue(merged["peak_force_to_window_enabled"])
+
+    def test_coerce_rejects_inverted_peak_window(self) -> None:
+        with self.assertRaises(ValueError):
+            coerce_audio_enhancement_partial(
+                {
+                    "peak_level_window_low_dbfs": -10.0,
+                    "peak_level_window_high_dbfs": -18.0,
+                }
+            )
 
 
 if __name__ == "__main__":

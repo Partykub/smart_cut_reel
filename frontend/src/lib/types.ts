@@ -30,6 +30,8 @@ export interface StepState {
   status: StepStatus;
   started_at: string | null;
   finished_at: string | null;
+  /** Present when the orchestrator stored per-step service metrics (e.g. audio_enhancement). */
+  metrics?: Record<string, unknown>;
 }
 
 export interface ServiceWarning {

@@ -17,6 +17,7 @@ The **audio-quality** preset adds enhancement + Silero VAD + faster-whisper ASR 
 - `contracts/*.schema.json`: JSON Schemas for the three Phase 1 manifests.
 - `contracts/examples/`: sample manifests for created, running, and completed states.
 - `orchestrator/README.md`: implementation notes for the current Orchestrator package.
+- [`docs/Audio Features Guide.md`](docs/Audio%20Features%20Guide.md): คู่มือฟีเจอร์เสียง, LUFS vs peak dBFS, peak-force, และ UI waveform (ภาษาไทย).
 
 ## Implemented So Far
 

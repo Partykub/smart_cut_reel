@@ -93,6 +93,29 @@ class ArtifactHelperTests(unittest.TestCase):
         self.assertEqual(service_status["steps"]["validation"]["status"], "running")
         self.assertEqual(service_status["warnings"][0]["code"], "VALIDATION_NEAR_16X9")
 
+    def test_set_step_state_can_attach_service_metrics(self) -> None:
+        smooth_manifest = json.loads(
+            Path(
+                "contracts/examples/job_manifest.reframe_16x9_to_9x16_smooth_audio.sample.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.manifest_manager.create_initial_job_state(smooth_manifest)
+
+        self.manifest_manager.set_step_state(
+            smooth_manifest["job_id"],
+            "audio_enhancement",
+            step_status="success",
+            finished_at="2026-05-06T10:00:02Z",
+            overall_status="running",
+            current_step="proxy_frame_sampling",
+            step_metrics={"peak_sample_dbfs": -15.2, "peak_within_window": True},
+        )
+
+        service_status = self.manifest_manager.read_service_status(smooth_manifest["job_id"])
+        metrics = service_status["steps"]["audio_enhancement"].get("metrics")
+        self.assertEqual(metrics["peak_sample_dbfs"], -15.2)
+        self.assertTrue(metrics["peak_within_window"])
+
     def test_register_artifact_requires_existing_object(self) -> None:
         self.manifest_manager.create_initial_job_state(self.job_manifest)
 

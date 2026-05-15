@@ -529,6 +529,27 @@
                         "loudness_normalization_enabled": {
                             "type": "boolean",
                             "description": "When false, skip loudnorm; combined with denoise off and highpass 0, the step copies extracted_audio to enhanced_audio unchanged."
+                        },
+                        "peak_level_window_low_dbfs": {
+                            "type": "number",
+                            "description": "Quieter bound of the sample-peak window (astats overall Peak level dB), default -18."
+                        },
+                        "peak_level_window_high_dbfs": {
+                            "type": "number",
+                            "description": "Louder bound of the sample-peak window, default -14."
+                        },
+                        "peak_window_report_enabled": {
+                            "type": "boolean",
+                            "description": "When true (default), measure astats peak and emit peak_* metrics vs the window."
+                        },
+                        "peak_force_to_window_enabled": {
+                            "type": "boolean",
+                            "description": "When true, apply volume pass(es) until astats overall peak is inside the window (may drift LUFS)."
+                        },
+                        "peak_force_max_boost_db": {
+                            "type": "number",
+                            "minimum": 0,
+                            "description": "Optional cap on positive gain when boosting a too-quiet peak (0 = uncapped, default)."
                         }
                     }
                 },

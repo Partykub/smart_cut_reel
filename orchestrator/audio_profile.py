@@ -22,6 +22,11 @@ _AUDIO_ENHANCEMENT_KEYS: frozenset[str] = frozenset(
         "loudness_range",
         "highpass_frequency_hz",
         "loudness_normalization_enabled",
+        "peak_level_window_low_dbfs",
+        "peak_level_window_high_dbfs",
+        "peak_window_report_enabled",
+        "peak_force_to_window_enabled",
+        "peak_force_max_boost_db",
     }
 )
 
@@ -110,9 +115,17 @@ def coerce_audio_enhancement_partial(raw: dict[str, Any]) -> dict[str, Any]:
                     f"audio_enhancement.denoise_model must be one of: {allowed}."
                 )
             out[key] = value
-        elif key == "loudness_normalization_enabled":
+        elif key in {"loudness_normalization_enabled", "peak_window_report_enabled", "peak_force_to_window_enabled"}:
             out[key] = bool(value)
-        elif key in {"target_lufs", "true_peak_db", "loudness_range", "highpass_frequency_hz"}:
+        elif key in {
+            "target_lufs",
+            "true_peak_db",
+            "loudness_range",
+            "highpass_frequency_hz",
+            "peak_level_window_low_dbfs",
+            "peak_level_window_high_dbfs",
+            "peak_force_max_boost_db",
+        }:
             try:
                 out[key] = float(value)
             except (TypeError, ValueError) as exc:
@@ -139,3 +152,9 @@ def _validate_audio_enhancement_dict(cfg: dict[str, Any]) -> None:
         raise ValueError("highpass_frequency_hz must be >= 0.")
     if float(cfg.get("loudness_range", 0)) < 0:
         raise ValueError("loudness_range must be >= 0.")
+    low = float(cfg.get("peak_level_window_low_dbfs", -18.0))
+    high = float(cfg.get("peak_level_window_high_dbfs", -14.0))
+    if low >= high:
+        raise ValueError("peak_level_window_low_dbfs must be < peak_level_window_high_dbfs (e.g. -18 and -14).")
+    if float(cfg.get("peak_force_max_boost_db", 0.0)) < 0:
+        raise ValueError("peak_force_max_boost_db must be >= 0 (0 = no boost cap).")
