@@ -1,15 +1,11 @@
 """Render the final 9:16 MP4 from ``render_plan.json`` using FFmpeg.
 
-Phase 1 supports two modes:
+``smooth_crop`` renders a continuous reframed timeline by decoding the source
+video frame-by-frame, applying the planned crop in memory, and remuxing audio.
 
-- ``static_crop``: single keyframe → one ffmpeg pass with ``crop`` + ``scale``.
-- ``smooth_crop``: keyframe-per-window → multiple ffmpeg passes followed by
-  concat demuxer and audio mux.
-
-Phase 2 adds ``smooth_crop_with_cuts``: each ``segment`` from ``render_plan.
-segments`` becomes a trim window with its own per-segment crop keyframes; all
-trimmed/cropped clips are concatenated and the source audio is sliced to match
-the kept ranges so audio stays in sync with video after dead-air removal.
+``smooth_crop_with_cuts`` renders one or more kept source ranges, each with its
+own per-segment crop keyframes; all trimmed/cropped clips are concatenated and
+the audio is sliced to match so A/V stays in sync after dead-air removal.
 """
 
 from __future__ import annotations
@@ -46,6 +42,9 @@ def _wav_file_has_audio(path: Path) -> bool:
         return False
 
 
+_VALID_RENDER_MODES = frozenset({"smooth_crop", "smooth_crop_with_cuts"})
+
+
 class FFmpegRendererService:
     service_id = "ffmpeg_renderer"
 
@@ -78,7 +77,10 @@ class FFmpegRendererService:
         if not isinstance(keyframes, list) or not keyframes:
             raise ValueError("render_plan crop_plan must include keyframes")
 
-        render_mode = str(plan.get("render_mode") or "static_crop")
+        render_mode = str(plan.get("render_mode") or "smooth_crop")
+        if render_mode not in _VALID_RENDER_MODES:
+            allowed = ", ".join(sorted(_VALID_RENDER_MODES))
+            raise ValueError(f"Unsupported render_mode '{render_mode}'. Allowed: {allowed}.")
         ffmpeg_config = self._ffmpeg_config(context)
 
         crop_w_e = _even_dimension(crop_w)
@@ -115,7 +117,7 @@ class FFmpegRendererService:
                     audio_src_path=audio_src_path,
                     source_has_audio_stream=source_has_audio,
                 )
-            elif render_mode == "smooth_crop":
+            else:
                 self._render_smooth_segments(
                     src_path=src_path,
                     out_path=out_path,
@@ -125,21 +127,6 @@ class FFmpegRendererService:
                     target_w=tw,
                     target_h=th,
                     ffmpeg_config=ffmpeg_config,
-                    audio_src_path=audio_src_path,
-                    source_has_audio_stream=source_has_audio,
-                )
-            else:
-                self._render_static_crop(
-                    src_path=src_path,
-                    out_path=out_path,
-                    keyframes=keyframes,
-                    crop_w_e=crop_w_e,
-                    crop_h_e=crop_h_e,
-                    target_w=tw,
-                    target_h=th,
-                    ffmpeg_config=ffmpeg_config,
-                    source_bytes=source_bytes,
-                    audio_policy=str(plan.get("audio_policy") or "copy_if_possible_else_aac"),
                     audio_src_path=audio_src_path,
                     source_has_audio_stream=source_has_audio,
                 )
@@ -216,122 +203,6 @@ class FFmpegRendererService:
         if not isinstance(raw_key, str) or not context.exists(raw_key):
             return {"tracks": []}
         return context.read_json(raw_key)
-
-    def _render_static_crop(
-        self,
-        *,
-        src_path: Path,
-        out_path: Path,
-        keyframes: list[dict[str, Any]],
-        crop_w_e: int,
-        crop_h_e: int,
-        target_w: int,
-        target_h: int,
-        ffmpeg_config: dict[str, Any],
-        source_bytes: bytes,
-        audio_policy: str,
-        audio_src_path: Path,
-        source_has_audio_stream: bool,
-    ) -> None:
-        first = keyframes[0]
-        cx = max(0, int(round(float(first.get("x") or 0.0))))
-        cy = max(0, int(round(float(first.get("y") or 0.0))))
-
-        probe = probe_video_bytes(source_bytes)
-        video_codec = str(ffmpeg_config.get("video_codec") or "libx264")
-        audio_codec = str(ffmpeg_config.get("audio_codec") or "aac")
-
-        vf = f"crop={crop_w_e}:{crop_h_e}:{cx}:{cy},scale={target_w}:{target_h}"
-
-        use_external_wav = audio_src_path != src_path
-        has_audio = (
-            source_has_audio_stream if not use_external_wav else _wav_file_has_audio(audio_src_path)
-        )
-
-        if use_external_wav:
-            cmd: list[str] = [
-                "ffmpeg",
-                "-y",
-                "-i",
-                str(src_path),
-                "-i",
-                str(audio_src_path),
-                "-vf",
-                vf,
-                "-map",
-                "0:v:0",
-                "-map",
-                "1:a:0",
-                "-shortest",
-                "-c:v",
-                video_codec,
-                "-preset",
-                "fast",
-                "-crf",
-                "23",
-                "-pix_fmt",
-                "yuv420p",
-                "-movflags",
-                "+faststart",
-                "-c:a",
-                audio_codec,
-                "-b:a",
-                "192k",
-                str(out_path),
-            ]
-            if not has_audio:
-                cmd = [
-                    "ffmpeg",
-                    "-y",
-                    "-i",
-                    str(src_path),
-                    "-vf",
-                    vf,
-                    "-c:v",
-                    video_codec,
-                    "-preset",
-                    "fast",
-                    "-crf",
-                    "23",
-                    "-pix_fmt",
-                    "yuv420p",
-                    "-movflags",
-                    "+faststart",
-                    "-an",
-                    str(out_path),
-                ]
-            self._run_ffmpeg(cmd)
-            return
-
-        cmd = [
-            "ffmpeg",
-            "-y",
-            "-i",
-            str(src_path),
-            "-vf",
-            vf,
-            "-c:v",
-            video_codec,
-            "-preset",
-            "fast",
-            "-crf",
-            "23",
-            "-pix_fmt",
-            "yuv420p",
-            "-movflags",
-            "+faststart",
-        ]
-
-        if has_audio:
-            if audio_policy == "aac_transcode":
-                cmd.extend(["-c:a", audio_codec, "-b:a", "192k"])
-            else:
-                cmd.extend(["-c:a", "copy"])
-        else:
-            cmd.append("-an")
-
-        cmd.append(str(out_path))
-        self._run_ffmpeg(cmd)
 
     def _render_smooth_segments(
         self,

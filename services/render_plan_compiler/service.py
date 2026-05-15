@@ -22,7 +22,7 @@ RENDER_PLAN_SCHEMA_VERSION = "1.1.0"
 _VALID_OUTPUT_AUDIO_SOURCES = frozenset({"source_video", "enhanced_wav"})
 
 _VALID_COMPILER_RENDER_MODES = frozenset(
-    {"static_crop", "smooth_crop", "smooth_crop_with_cuts", "full_frame_with_cuts"}
+    {"smooth_crop", "smooth_crop_with_cuts", "full_frame_with_cuts"}
 )
 
 

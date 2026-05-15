@@ -246,7 +246,7 @@ Todo (ส่วนเพิ่มจาก Phase 1):
 Schema เพิ่มใน `job_manifest.service_config.render_plan_compiler.compiler_render_mode`:
 
 ```text
-static_crop | smooth_crop | smooth_crop_with_cuts
+smooth_crop | smooth_crop_with_cuts
 ```
 
 Output example (สำหรับ `smooth_crop_with_cuts`):

@@ -78,9 +78,12 @@ class FFmpegRendererServiceTests(unittest.TestCase):
                 "crop_plan": {
                     "crop_width": 96,
                     "crop_height": 180,
-                    "keyframes": [{"t": 0.0, "x": 112.0, "y": 0.0}],
+                    "keyframes": [
+                        {"t": 0.0, "x": 112.0, "y": 0.0},
+                        {"t": 1.0, "x": 112.0, "y": 0.0},
+                    ],
                 },
-                "render_mode": "static_crop",
+                "render_mode": "smooth_crop",
             },
         )
         self.store.upload_json(
@@ -142,7 +145,7 @@ class FFmpegRendererServiceTests(unittest.TestCase):
             self.assertEqual(scaled["body_bbox"], {"x": 40.0, "y": 7.5, "w": 50.0, "h": 40.0})
             self.assertEqual(scaled["face_bbox"], {"x": 50.0, "y": 12.5, "w": 20.0, "h": 15.0})
 
-    def test_static_crop_writes_mp4(self) -> None:
+    def test_smooth_crop_writes_mp4(self) -> None:
         response = self.service.run(build_context(self.request, self.store))
         out_key = self.request.expected_outputs["final_9x16"]
         self.assertEqual(response.outputs["final_9x16"], out_key)
@@ -164,7 +167,7 @@ class FFmpegRendererServiceTests(unittest.TestCase):
 class FFmpegRendererWithoutBodyTracksTests(unittest.TestCase):
     """Phase 2/3 audio pipelines omit detection; overlay uses crop box only."""
 
-    def test_static_crop_without_body_tracks_raw(self) -> None:
+    def test_smooth_crop_without_body_tracks_raw(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
         root = Path(temp_dir.name)
         store = FilesystemObjectStore(root)
@@ -188,9 +191,12 @@ class FFmpegRendererWithoutBodyTracksTests(unittest.TestCase):
                 "crop_plan": {
                     "crop_width": 320,
                     "crop_height": 180,
-                    "keyframes": [{"t": 0.0, "x": 0.0, "y": 0.0}],
+                    "keyframes": [
+                        {"t": 0.0, "x": 0.0, "y": 0.0},
+                        {"t": 1.0, "x": 0.0, "y": 0.0},
+                    ],
                 },
-                "render_mode": "static_crop",
+                "render_mode": "smooth_crop",
             },
         )
         store.upload_json(
@@ -506,7 +512,7 @@ class FFmpegRendererSmoothTests(unittest.TestCase):
 
 @unittest.skipUnless(_ffmpeg_available(), "ffmpeg not installed")
 class FFmpegRendererExternalWavMuxTests(unittest.TestCase):
-    def test_static_crop_muxes_audio_from_external_wav(self) -> None:
+    def test_smooth_crop_muxes_audio_from_external_wav(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
         root = Path(temp_dir.name)
         store = FilesystemObjectStore(root)
@@ -587,7 +593,7 @@ class FFmpegRendererExternalWavMuxTests(unittest.TestCase):
                         {"t": 2.0, "x": 112.0, "y": 0.0},
                     ],
                 },
-                "render_mode": "static_crop",
+                "render_mode": "smooth_crop",
             },
         )
         store.upload_json(

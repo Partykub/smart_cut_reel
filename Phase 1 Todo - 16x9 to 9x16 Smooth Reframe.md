@@ -465,9 +465,9 @@ Done when:
 - [x] P1-G03: ทำ velocity/acceleration limit และ dead zone
   Owner: Smoothing | Assigned To: ฟิล์ม | Write Scope: Easing/smoothing service เท่านั้น | Depends on: P1-G02 | Deliverable: crop path smooth และ clamp แล้ว
 - [x] P1-H01: ทำ Render Plan Compiler Service
-  Owner: Renderer | Assigned To: ฟิล์ม | Write Scope: Render plan compiler service เท่านั้น | Depends on: P1-C02, P1-G02 | Deliverable: `render_plan.json` — `services/render_plan_compiler/`; config `compiler_render_mode` (`static_crop` | `smooth_crop`) ใน `job_manifest.service_config.render_plan_compiler`
-- [x] P1-H02: ทำ FFmpeg Renderer Service แบบ center crop/static crop ก่อน
-  Owner: Renderer | Assigned To: ฟิล์ม | Write Scope: FFmpeg renderer service เท่านั้น | Depends on: P1-H01 | Deliverable: output 9:16 เล่นได้ — `services/ffmpeg_renderer/` โหมด `static_crop` (crop จาก keyframe แรก)
+  Owner: Renderer | Assigned To: ฟิล์ม | Write Scope: Render plan compiler service เท่านั้น | Depends on: P1-C02, P1-G02 | Deliverable: `render_plan.json` — `services/render_plan_compiler/`; config `compiler_render_mode` (`smooth_crop`) ใน `job_manifest.service_config.render_plan_compiler`
+- [x] P1-H02: ทำ FFmpeg Renderer Service แบบ center crop ก่อน
+  Owner: Renderer | Assigned To: ฟิล์ม | Write Scope: FFmpeg renderer service เท่านั้น | Depends on: P1-H01 | Deliverable: output 9:16 เล่นได้ — `services/ffmpeg_renderer/` โหมด `smooth_crop`
 - [x] P1-H03: ทำ FFmpeg Renderer ใช้ smooth crop plan
   Owner: Renderer | Assigned To: ฟิล์ม | Write Scope: FFmpeg renderer service เท่านั้น | Depends on: P1-G03, P1-H02 | Deliverable: output 9:16 ที่ pan ตาม crop plan — โหมด `smooth_crop` (segment ระหว่าง keyframes + concat + mux เสียง)
 - [ ] P1-I01: ทำ sample input/output fixture สำหรับทุก service
@@ -479,7 +479,7 @@ Done when:
 
 Source of truth for P1-A01 contract files lives in `contracts/CONTRACTS.md` and the JSON Schemas under `contracts/`.
 
-สถานะล่าสุด: P1-A01, P1-A02, P1-A03, และ P1-A04 เสร็จแล้ว โดย P1-A04 เพิ่ม HTTP service runner ที่เรียก `/run` ตามลำดับ, register artifacts/warnings, handle hard-fail ต่อ step, และยัง fallback เป็น mock runner เมื่อยังไม่ config service endpoints. **เพิ่ม (2026-05-07):** P1-B01, P1-B02, และ P1-G01 เสร็จแล้ว (ฟิล์ม) — Debug UI อยู่ที่ `frontend/`; easing library อยู่ที่ `services/easing_smoothing/` และ `frontend/src/lib/easing/`. **เพิ่ม (2026-05-08):** P1-C01, P1-C02, P1-C03, P1-D01, P1-D02, P1-D03, P1-E01, P1-E02, P1-F01, P1-F02, P1-G02, และ P1-G03 มี implementation พร้อม focused tests และ early-pipeline integration ผ่านถึง `reframe_plan_smooth.json`. ฝั่ง body detection ใช้ OpenCV HOG backend พร้อม fallback center track เมื่อ detect ไม่เจอ. **เพิ่ม (2026-05-08):** P1-H01, P1-H02, P1-H03, และ P1-B03 เสร็จแล้ว (ฟิล์ม) — `services/render_plan_compiler/`, `services/ffmpeg_renderer/` (`static_crop` / `smooth_crop`), Orchestrator `GET /jobs/{job_id}/artifacts/{artifact_key}`, frontend preview/download `/api/jobs/[jobId]/output`.
+สถานะล่าสุด: P1-A01, P1-A02, P1-A03, และ P1-A04 เสร็จแล้ว โดย P1-A04 เพิ่ม HTTP service runner ที่เรียก `/run` ตามลำดับ, register artifacts/warnings, handle hard-fail ต่อ step, และยัง fallback เป็น mock runner เมื่อยังไม่ config service endpoints. **เพิ่ม (2026-05-07):** P1-B01, P1-B02, และ P1-G01 เสร็จแล้ว (ฟิล์ม) — Debug UI อยู่ที่ `frontend/`; easing library อยู่ที่ `services/easing_smoothing/` และ `frontend/src/lib/easing/`. **เพิ่ม (2026-05-08):** P1-C01, P1-C02, P1-C03, P1-D01, P1-D02, P1-D03, P1-E01, P1-E02, P1-F01, P1-F02, P1-G02, และ P1-G03 มี implementation พร้อม focused tests และ early-pipeline integration ผ่านถึง `reframe_plan_smooth.json`. ฝั่ง body detection ใช้ OpenCV HOG backend พร้อม fallback center track เมื่อ detect ไม่เจอ. **เพิ่ม (2026-05-08):** P1-H01, P1-H02, P1-H03, และ P1-B03 เสร็จแล้ว (ฟิล์ม) — `services/render_plan_compiler/`, `services/ffmpeg_renderer/` (`smooth_crop`), Orchestrator `GET /jobs/{job_id}/artifacts/{artifact_key}`, frontend preview/download `/api/jobs/[jobId]/output`.
 
 ### งานที่เริ่มได้ทันทีตอนนี้
 

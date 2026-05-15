@@ -406,7 +406,6 @@
                         "compiler_render_mode": {
                             "type": "string",
                             "enum": [
-                                "static_crop",
                                 "smooth_crop",
                                 "smooth_crop_with_cuts",
                                 "full_frame_with_cuts"

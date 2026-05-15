@@ -45,8 +45,13 @@ The **audio-quality** preset adds enhancement + Silero VAD + faster-whisper ASR 
 - `services/track_interpolation/`: fills short gaps, applies hold/center fallback, and suppresses large outlier jumps.
 - `services/reframe_planning/`: converts interpolated tracks into clamped 9:16 crop keyframes.
 - `services/easing_smoothing/`: smooths raw reframe keyframes with easing, dead-zone handling, and bounded motion.
-- `services/render_plan_compiler/`: builds `artifacts/render_plan.json` from metadata + `reframe_plan_smooth.json` (and, for Phase 2, `cut_plan.json`). Supports `compiler_render_mode` ∈ {`static_crop`, `smooth_crop`, `smooth_crop_with_cuts`}.
-- `services/ffmpeg_renderer/`: renders `outputs/final_9x16.mp4` via FFmpeg. `static_crop` uses the first keyframe; `smooth_crop` slices windows between keyframes, concatenates, then muxes audio; `smooth_crop_with_cuts` does the same per keep-segment and slices the source audio to match (so dead-air removal stays A/V-synced).
+- `services/render_plan_compiler/`: builds `artifacts/render_plan.json` from metadata + `reframe_plan_smooth.json` (and, for Phase 2, `cut_plan.json`). Supports `compiler_render_mode` ∈ {`smooth_crop`, `smooth_crop_with_cuts`}.
+- `services/ffmpeg_renderer/`: renders `outputs/final_9x16.mp4` via FFmpeg. `smooth_crop` decodes the source continuously, applies the planned crop in memory, then muxes audio; `smooth_crop_with_cuts` renders one or more keep-segments and slices the audio to match so dead-air removal stays A/V-synced.
+
+Renderer migration note:
+- `static_crop` has been removed from the active pipeline.
+- `reframe_16x9_to_9x16` and `reframe_16x9_to_9x16_smooth_audio` map to `smooth_crop`.
+- `reframe_16x9_to_9x16_dead_air`, `reframe_16x9_to_9x16_dead_air_enhanced`, and `reframe_16x9_to_9x16_audio_quality` map to `smooth_crop_with_cuts`.
 - `services/audio_extraction/`: decodes the source audio track to mono PCM 16-bit WAV (default 16 kHz) and emits `artifacts/extracted_audio.wav`.
 - `services/audio_enhancement/` (Phase 3): runs an FFmpeg filter chain (`highpass` → `afftdn` denoise → `loudnorm` EBU R128 to -16 LUFS / -1.5 dBTP by default) on `extracted_audio.wav` and emits `artifacts/enhanced_audio.wav`. On FFmpeg failure it copies the source audio through and emits a warning so the pipeline still proceeds.
 - `services/voice_activity_detection/`: segments the timeline into `speech` / `silence` runs. `model: energy` is the Phase 2 default; `model: silero_v4` (Phase 3 default) loads the bundled Silero VAD v5 ONNX weights via `silero-vad` + `onnxruntime` (cached once per process). `audio_source` selects between `extracted_audio`, `enhanced_audio`, or `enhanced_audio_or_extracted` (fallback). Emits `artifacts/vad_segments.json`.
