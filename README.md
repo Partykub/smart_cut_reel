@@ -68,6 +68,17 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
+If a specific Linux workstation needs GPU-enabled PyTorch, keep
+`requirements.txt` as the shared baseline and apply the local CUDA overlay
+afterward:
+
+```bash
+.venv/bin/pip install --upgrade -r requirements.gpu.txt
+```
+
+`requirements.gpu.txt` is intended for machine-specific opt-in installs. It
+should not replace the shared baseline in `requirements.txt`.
+
 To enable the real HTTP runner, configure service URLs before starting the Orchestrator. Phase 2 adds three audio services on ports 8019–8021; Phase 3 adds two more on ports 8022–8023:
 
 ```bash
@@ -134,7 +145,16 @@ python3 -m venv .venv
 ./scripts/start_local_stack.sh
 ```
 
+For the current RTX 5090 local setup, apply the GPU overlay after the baseline
+install and before starting the stack:
+
+```bash
+.venv/bin/pip install --upgrade -r requirements.gpu.txt
+```
+
 If you pull new dependency changes after the venv already exists, rerun `.venv/bin/pip install -r requirements.txt` and restart the local stack before creating a new job.
+
+If this machine relies on CUDA, rerun `.venv/bin/pip install --upgrade -r requirements.gpu.txt` after the baseline reinstall because `requirements.txt` intentionally keeps Linux on CPU-safe wheels by default.
 
 This starts every microservice (Phase 1 ports `8010–8018` + Phase 2 ports `8019–8021` + Phase 3 ports `8022–8023`) and the orchestrator on **`http://127.0.0.1:8000`**, using `SMART_CUT_OBJECT_STORE_ROOT` (default: `.orchestrator-data/` under the repo). Press **Ctrl+C** to stop every process.
 

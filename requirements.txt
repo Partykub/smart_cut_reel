@@ -1,3 +1,8 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# Baseline dependencies for local development. For machine-specific CUDA
+# upgrades, install this file first, then apply requirements.gpu.txt.
+
 face-recognition>=1.3,<2
 fastapi>=0.115,<1
 faster-whisper>=1.0,<2
@@ -10,6 +15,12 @@ opencv-python-headless>=4.10,<5
 python-multipart>=0.0.9,<1
 retina-face>=0.0.17,<1
 silero-vad>=5,<6
+torch==2.5.1+cpu; platform_system == "Linux"
+torchaudio==2.5.1+cpu; platform_system == "Linux"
+torchvision==0.20.1+cpu; platform_system == "Linux"
+torch==2.5.1; platform_system != "Linux"
+torchaudio==2.5.1; platform_system != "Linux"
+torchvision==0.20.1; platform_system != "Linux"
 tf-keras>=2.21,<2.22
 ultralytics>=8.3,<9
 uvicorn>=0.30,<1
