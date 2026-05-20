@@ -1,0 +1,30 @@
+{
+  "source_video": "temp_work/horizontal.mp4",
+  "logo_image": ".hyperframes-finishing-data/projects/hfp_1f242fc6b90a/assets/logo_image.png",
+  "generated_previews": [
+    {
+      "variant": "gravitational-lens",
+      "job_id": "hf_d9a759b18fe3",
+      "video": "hyperframes-previews/gravitational-lens.mp4",
+      "poster": "hyperframes-previews/gravitational-lens.png"
+    },
+    {
+      "variant": "vfx-text-cursor",
+      "job_id": "hf_8f6f5d3c1b49",
+      "video": "hyperframes-previews/vfx-text-cursor.mp4",
+      "poster": "hyperframes-previews/vfx-text-cursor.png"
+    },
+    {
+      "variant": "yt-lower-third",
+      "job_id": "hf_5c40fa73d182",
+      "video": "hyperframes-previews/yt-lower-third.mp4",
+      "poster": "hyperframes-previews/yt-lower-third.png"
+    },
+    {
+      "variant": "ui-3d-reveal",
+      "job_id": "hf_0091aa98311a",
+      "video": "hyperframes-previews/ui-3d-reveal.mp4",
+      "poster": "hyperframes-previews/ui-3d-reveal.png"
+    }
+  ]
+}

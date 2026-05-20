@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, height=1080">
+    <title>Smart Cut Reel Studio</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #030507;
+        color: #f8fafc;
+        font-family: Inter, Arial, sans-serif;
+      }
+      #root {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 18% 20%, rgba(103, 232, 249, 0.18), transparent 28%),
+          radial-gradient(circle at 86% 18%, rgba(244, 114, 182, 0.14), transparent 32%),
+          linear-gradient(180deg, #071019 0%, #030507 100%);
+      }
+      .clip { position: absolute; }
+      .grid {
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+        background-size: 96px 96px;
+        opacity: 0.24;
+      }
+      .glow {
+        inset: 0;
+        background:
+          radial-gradient(circle at 50% 42%, rgba(246, 255, 122, 0.14), transparent 18%),
+          radial-gradient(circle at 50% 42%, rgba(103, 232, 249, 0.18), transparent 30%);
+        filter: blur(32px);
+      }
+      .hero-card {
+        left: 120px;
+        top: 76px;
+        width: 1680px;
+        height: 928px;
+        border-radius: 44px;
+        border: 1px solid rgba(255,255,255,0.12);
+        background: linear-gradient(160deg, rgba(255,255,255,0.11), rgba(255,255,255,0.03));
+        box-shadow: 0 34px 120px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.16);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+      }
+      .eyebrow {
+        left: 160px;
+        top: 136px;
+        font-size: 24px;
+        font-weight: 600;
+        letter-spacing: 0.28em;
+        text-transform: uppercase;
+        color: #f6ff7a;
+      }
+      .headline {
+        left: 156px;
+        top: 192px;
+        width: 980px;
+        font-size: 122px;
+        line-height: 0.94;
+        font-weight: 800;
+        letter-spacing: -0.05em;
+        text-shadow: 0 18px 50px rgba(0,0,0,0.42);
+      }
+      .support-copy {
+        left: 164px;
+        top: 496px;
+        width: 740px;
+        font-size: 34px;
+        line-height: 1.35;
+        color: rgba(248,250,252,0.72);
+      }
+      .brand-mark {
+        right: 134px;
+        top: 174px;
+        width: 640px;
+        height: auto;
+        filter: drop-shadow(0 20px 60px rgba(0,0,0,0.38));
+      }
+      .panel {
+        bottom: 112px;
+        width: 452px;
+        height: 204px;
+        padding: 28px 32px;
+        border-radius: 30px;
+        background: rgba(7, 15, 23, 0.78);
+        border: 1px solid rgba(255,255,255,0.1);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+      }
+      .panel h2 {
+        font-size: 22px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: rgba(248,250,252,0.56);
+      }
+      .panel p {
+        margin-top: 18px;
+        font-size: 34px;
+        line-height: 1.12;
+        font-weight: 700;
+      }
+      .panel-left { left: 160px; }
+      .panel-mid { left: 734px; }
+      .panel-right { right: 160px; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="8" data-width="1920" data-height="1080"><img id="logo_ch7_bugaboo_wb2_0" class="clip" src="Logo_Ch7_Bugaboo_WB2_0.png" data-start="0" data-duration="0.23" data-track-index="0" style="position: absolute; left: 0px; top: 0px; width: 1920px; height: 1080px; object-fit: contain; z-index: 8">
+      
+      
+      
+      <p id="eyebrow" class="clip eyebrow" data-start="0.2" data-duration="7.5" data-track-index="3" style="z-index: 7">embedded studio</p>
+      <h1 id="headline" class="clip headline" data-start="0.28" data-duration="7.2" data-track-index="4" style="z-index: 6">Build first with Hyperframes Studio, then customize.</h1>
+      <p id="support-copy" class="clip support-copy" data-start="0.44" data-duration="7.1" data-track-index="5" style="z-index: 5">This workspace is only a starting shell for timeline editing, preview, and scene structure. We can replace each panel and animation with your actual brand system next.</p>
+      <img id="brand-mark" class="clip brand-mark" src="assets/brand-mark.svg" alt="Smart Cut Reel brand mark" data-start="0.52" data-duration="7.1" data-track-index="6" style="filter: drop-shadow(rgba(0, 0, 0, 0.38) 0px 20px 60px); z-index: 4">
+      <div id="panel-left" class="clip panel panel-left" data-start="1.2" data-duration="6.4" data-track-index="7" style="z-index: 3"><h2>scene</h2><p>Hero intro with clean timing and safe zones.</p></div>
+      <div id="panel-mid" class="clip panel panel-mid" data-start="1.45" data-duration="6.15" data-track-index="8" style="z-index: 2"><h2>timeline</h2><p>Ready to trim clips, drag layers, and inspect durations.</p></div>
+      <div id="panel-right" class="clip panel panel-right" data-start="1.7" data-duration="5.9" data-track-index="9" style="z-index: 1"><h2>next step</h2><p>Swap in your real blocks, intros, and subtitle treatments.</p></div>
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      tl.fromTo("#hero-card", { opacity: 0, y: 44, scale: 0.98 }, { opacity: 1, y: 0, scale: 1, duration: 0.7, ease: "power3.out" }, 0.05);
+      tl.fromTo("#eyebrow", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }, 0.18);
+      tl.fromTo("#headline", { opacity: 0, y: 36 }, { opacity: 1, y: 0, duration: 0.65, ease: "power3.out" }, 0.28);
+      tl.fromTo("#support-copy", { opacity: 0, y: 28 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 0.42);
+      tl.fromTo("#brand-mark", { opacity: 0, y: 48, rotate: -2 }, { opacity: 1, y: 0, rotate: 0, duration: 0.8, ease: "power3.out" }, 0.5);
+      tl.fromTo(["#panel-left", "#panel-mid", "#panel-right"], { opacity: 0, y: 30, scale: 0.98 }, { opacity: 1, y: 0, scale: 1, duration: 0.55, stagger: 0.14, ease: "power2.out" }, 1.18);
+      tl.to("#brand-mark", { y: -8, duration: 1.6, repeat: 2, yoyo: true, ease: "sine.inOut" }, 1.5);
+      tl.to(["#hero-card", "#eyebrow", "#headline", "#support-copy", "#brand-mark", "#panel-left", "#panel-mid", "#panel-right"], { opacity: 0, y: -20, duration: 0.45, stagger: 0.03, ease: "power2.in" }, 7.2);
+      window.__timelines.main = tl;
+    </script>
+  </body>
+</html>

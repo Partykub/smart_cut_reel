@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="192" viewBox="0 0 640 192" fill="none">
+  <rect width="640" height="192" rx="36" fill="#081018"/>
+  <rect x="10" y="10" width="620" height="172" rx="30" stroke="url(#edge)" stroke-width="4" fill="url(#panel)"/>
+  <circle cx="94" cy="96" r="42" fill="#F6FF7A"/>
+  <path d="M94 48L106 82H142L112 103L124 138L94 116L64 138L76 103L46 82H82L94 48Z" fill="#081018"/>
+  <text x="174" y="92" fill="#F8FAFC" font-family="Arial, sans-serif" font-size="44" font-weight="700">Smart Cut Reel</text>
+  <text x="174" y="132" fill="#67E8F9" font-family="Arial, sans-serif" font-size="24" font-weight="600">Hyperframes Studio Workspace</text>
+  <defs>
+    <linearGradient id="edge" x1="32" y1="22" x2="608" y2="170" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#67E8F9"/>
+      <stop offset="1" stop-color="#F472B6"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="320" y1="10" x2="320" y2="182" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1522"/>
+      <stop offset="1" stop-color="#09111A"/>
+    </linearGradient>
+  </defs>
+</svg>

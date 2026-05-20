@@ -1,4 +1,8 @@
 import { UploadForm } from "@/components/UploadForm";
+import Link from "next/link";
+import type { Route } from "next";
+
+const HYPERFRAMES_STUDIO_ROUTE = "/hyperframes" as Route;
 
 export default function HomePage() {
   return (
@@ -7,6 +11,14 @@ export default function HomePage() {
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-400/90">
           Smart Cut Reel · Local pipeline UI
         </p>
+        <div>
+          <Link
+            href={HYPERFRAMES_STUDIO_ROUTE}
+            className="text-sm text-amber-300 transition hover:text-amber-200"
+          >
+            Open Hyperframes finishing studio →
+          </Link>
+        </div>
         <h1 className="font-display text-4xl font-semibold tracking-tight text-white sm:text-[2.75rem] sm:leading-[1.1]">
           Turn 16:9 footage into vertical video
         </h1>
